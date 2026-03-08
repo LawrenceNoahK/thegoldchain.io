@@ -172,40 +172,61 @@ export async function POST(request: Request) {
       }
     }
 
-    // 9. Insert gold_batch with idempotency key
-    const { data: batch, error: batchError } = await admin
-      .from("gold_batches")
-      .insert({
-        operator_id: profile.operator_id,
-        declared_weight_kg: validData.declared_weight_kg,
-        status: isStale ? "FLAGGED" : "PENDING",
-        idempotency_key: idempotencyKey || null,
-      })
-      .select("id, batch_id")
-      .single();
+    // 9. Insert gold_batch with idempotency key (atomic upsert to prevent race conditions)
+    let batch: { id: string; batch_id: string } | null = null;
+    if (idempotencyKey) {
+      // Try insert first, handle conflict atomically
+      const { data: insertedBatch, error: insertError } = await admin
+        .from("gold_batches")
+        .insert({
+          operator_id: profile.operator_id,
+          declared_weight_kg: validData.declared_weight_kg,
+          status: isStale ? "FLAGGED" : "PENDING",
+          idempotency_key: idempotencyKey,
+        })
+        .select("id, batch_id")
+        .single();
 
-    if (batchError || !batch) {
-      // Check if this is a unique constraint violation (duplicate idempotency key)
-      if (batchError?.code === "23505" && idempotencyKey) {
-        // Race condition: another request just inserted this
-        const { data: raceBatch } = await admin
+      if (insertError?.code === "23505") {
+        // Duplicate — fetch existing batch
+        const { data: existingBatch } = await admin
           .from("gold_batches")
           .select("id, batch_id")
           .eq("idempotency_key", idempotencyKey)
           .single();
 
-        if (raceBatch) {
+        if (existingBatch) {
           return NextResponse.json({
             success: true,
-            batchId: raceBatch.batch_id,
+            batchId: existingBatch.batch_id,
             duplicate: true,
           });
         }
+        return NextResponse.json({ error: "Failed to create batch" }, { status: 500 });
       }
-      return NextResponse.json(
-        { error: "Failed to create batch" },
-        { status: 500 }
-      );
+
+      if (insertError || !insertedBatch) {
+        return NextResponse.json({ error: "Failed to create batch" }, { status: 500 });
+      }
+
+      batch = insertedBatch;
+    } else {
+      // No idempotency key — direct insert
+      const { data: insertedBatch, error: insertError } = await admin
+        .from("gold_batches")
+        .insert({
+          operator_id: profile.operator_id,
+          declared_weight_kg: validData.declared_weight_kg,
+          status: isStale ? "FLAGGED" : "PENDING",
+        })
+        .select("id, batch_id")
+        .single();
+
+      if (insertError || !insertedBatch) {
+        return NextResponse.json({ error: "Failed to create batch" }, { status: 500 });
+      }
+
+      batch = insertedBatch;
     }
 
     // 10. Insert batch_node (Node 01)

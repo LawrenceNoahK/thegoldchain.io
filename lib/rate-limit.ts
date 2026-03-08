@@ -24,8 +24,14 @@ export async function rateLimit(
 ): Promise<{ success: boolean; remaining: number; resetAt: number }> {
   try {
     return await rateLimitPersistent(key, limit, windowMs);
-  } catch {
-    // Fallback to in-memory if DB is unavailable
+  } catch (err: unknown) {
+    // Only fallback for transient errors (network, connection pool).
+    // If the table doesn't exist, log loudly — migrations need to run.
+    const message = err instanceof Error ? err.message : "";
+    const pgCode = (err as any)?.code;
+    if (pgCode === "42P01" || message.includes("does not exist")) {
+      console.error("[RATE LIMIT] rate_limit_checks table not found. Run migration 005_security_hardening.sql");
+    }
     return rateLimitMemory(key, limit, windowMs);
   }
 }

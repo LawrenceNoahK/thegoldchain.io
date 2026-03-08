@@ -51,6 +51,7 @@ export function useOfflineDeclaration() {
   const [pendingDeclarations, setPendingDeclarations] = useState<PendingDeclaration[]>([]);
   const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "done" | "error" | "token_expired">("idle");
   const [lastSyncResult, setLastSyncResult] = useState<SyncResult | null>(null);
+  const [offlineReady, setOfflineReady] = useState(false);
 
   const refreshQueue = useCallback(async () => {
     try {
@@ -68,9 +69,13 @@ export function useOfflineDeclaration() {
         try {
           const supabase = createClient();
           await fetchHmacSecret(supabase);
+          setOfflineReady(true);
         } catch {
+          setOfflineReady(false);
           // Will retry when user tries to submit
         }
+      } else {
+        setOfflineReady(true);
       }
     }
     prefetchSecret();
@@ -158,5 +163,6 @@ export function useOfflineDeclaration() {
     syncStatus,
     lastSyncResult,
     refreshQueue,
+    offlineReady,
   };
 }

@@ -15,7 +15,7 @@ export default function DeclarePage() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
 
   const { isOnline, pendingCount } = useOnlineStatus();
-  const { submit: queueOffline, syncNow, pendingDeclarations, syncStatus, lastSyncResult } = useOfflineDeclaration();
+  const { submit: queueOffline, syncNow, pendingDeclarations, syncStatus, lastSyncResult, offlineReady } = useOfflineDeclaration();
 
   // Auto-capture GPS on mount
   useEffect(() => {
@@ -30,11 +30,11 @@ export default function DeclarePage() {
     }
   }, []);
 
-  // Listen for Service Worker sync completion
+  // Listen for Service Worker messages (sync requests and completions)
   useEffect(() => {
     if ("serviceWorker" in navigator) {
       const handler = (event: MessageEvent) => {
-        if (event.data?.type === "SYNC_COMPLETE") {
+        if (event.data?.type === "SYNC_COMPLETE" || event.data?.type === "SYNC_REQUESTED") {
           syncNow();
         }
       };
@@ -141,6 +141,13 @@ export default function DeclarePage() {
           </span>
         )}
       </div>
+
+      {/* Offline not ready warning */}
+      {!isOnline && !offlineReady && (
+        <div className="text-[9px] text-gc-amber border border-gc-amber/30 bg-gc-amber/5 px-3 py-2 rounded-gc tracking-[1px]">
+          OFFLINE MODE UNAVAILABLE — Connect to the network and refresh to enable offline declarations.
+        </div>
+      )}
 
       {/* Token expired banner */}
       {syncStatus === "token_expired" && (

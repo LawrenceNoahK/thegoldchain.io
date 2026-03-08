@@ -49,7 +49,9 @@ export default function GoldbodDashboard() {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      channel.unsubscribe().then(() => {
+        supabase.removeChannel(channel);
+      });
     };
   }, [fetchBatches]);
 

@@ -45,6 +45,20 @@ export default function LoginPage() {
       return;
     }
 
+    // Provision HMAC secret for offline declaration signing
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        await fetch("/api/hmac-secret", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ authToken: session.access_token }),
+        });
+      }
+    } catch {
+      // Non-blocking — offline mode may not work, but login should proceed
+    }
+
     router.push("/");
     router.refresh();
   }

@@ -108,6 +108,23 @@ async function syncDeclarations() {
       return;
     }
 
+    // SW cannot get a fresh auth token (runs in separate context).
+    // We must skip sync if no token is available — main thread drainQueue
+    // handles auth properly by reading from the Supabase session.
+    // Attempt to get a token from the first client's cookie/session is not
+    // possible in SW context, so we notify the main thread to handle sync.
+    const clients = await self.clients.matchAll();
+    if (clients.length > 0) {
+      // Delegate to main thread which has access to auth session
+      for (const client of clients) {
+        client.postMessage({ type: "SYNC_REQUESTED" });
+      }
+      syncInProgress = false;
+      return;
+    }
+
+    // No clients available — try to sync with stored data
+    // (will likely fail with 401, but try anyway for non-auth endpoints)
     for (const declaration of pending) {
       try {
         const response = await fetch("/api/sync", {
@@ -117,9 +134,7 @@ async function syncDeclarations() {
             declaration: declaration.payload,
             hmac: declaration.hmac,
             idempotencyKey: declaration.idempotencyKey,
-            // SW cannot get fresh token — it uses the last known token
-            // If this fails with 401, the main thread drainQueue will handle it
-            authToken: declaration.authToken || "",
+            authToken: "",
           }),
         });
 
