@@ -54,11 +54,11 @@ export async function enqueueDeclaration(
   },
   hmacSecret: string
 ): Promise<number> {
-  // Re-capture GPS at the moment of queuing (not from form state)
+  // Use form GPS if provided; otherwise try to capture fresh GPS
   let freshLat = input.gps_lat;
   let freshLng = input.gps_lng;
 
-  if (typeof navigator !== "undefined" && navigator.geolocation) {
+  if (!freshLat && !freshLng && typeof navigator !== "undefined" && navigator.geolocation) {
     try {
       const position = await new Promise<GeolocationPosition>(
         (resolve, reject) => {
@@ -71,7 +71,7 @@ export async function enqueueDeclaration(
       freshLat = parseFloat(position.coords.latitude.toFixed(6));
       freshLng = parseFloat(position.coords.longitude.toFixed(6));
     } catch {
-      // GPS unavailable — use form values
+      // GPS unavailable — submit without coordinates
     }
   }
 
@@ -98,14 +98,14 @@ export async function enqueueDeclaration(
     createdAt: new Date().toISOString(),
   });
 
-  // Try to register Background Sync if available
+  // Try to register Background Sync if available (non-blocking)
   if ("serviceWorker" in navigator && "SyncManager" in window) {
-    try {
-      const registration = await navigator.serviceWorker.ready;
-      await (registration as ServiceWorkerRegistration & { sync: { register: (tag: string) => Promise<void> } }).sync.register("goldchain-declarations");
-    } catch {
-      // Background Sync not available — will use polling
-    }
+    navigator.serviceWorker.getRegistration().then((registration) => {
+      if (registration?.active) {
+        (registration as ServiceWorkerRegistration & { sync: { register: (tag: string) => Promise<void> } })
+          .sync.register("goldchain-declarations").catch(() => {});
+      }
+    }).catch(() => {});
   }
 
   return id;
