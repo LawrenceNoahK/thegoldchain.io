@@ -2,7 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;400;500;600;700&family=Share+Tech+Mono&family=VT323&display=swap');
+/* Share Tech Mono is not available in next/font/google — keep CSS import for this one */
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
 
 @layer base {
   * {
@@ -12,7 +13,7 @@
   body {
     background: #020A04;
     color: #00FF41;
-    font-family: 'Fira Code', 'Share Tech Mono', monospace;
+    font-family: var(--font-fira-code), 'Share Tech Mono', monospace;
   }
 
   ::-webkit-scrollbar {

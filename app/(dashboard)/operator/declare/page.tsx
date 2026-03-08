@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { declareAction } from "@/lib/actions/declarations";
+import { declareSchema } from "@/lib/validations";
 
 export default function DeclarePage() {
   const [weight, setWeight] = useState("");
@@ -10,6 +11,23 @@ export default function DeclarePage() {
   const [notes, setNotes] = useState("");
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [message, setMessage] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
+  const [isOnline, setIsOnline] = useState(true);
+
+  // Track online/offline status
+  useEffect(() => {
+    if (typeof navigator !== "undefined") {
+      setIsOnline(navigator.onLine);
+    }
+    function handleOnline() { setIsOnline(true); }
+    function handleOffline() { setIsOnline(false); }
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
 
   // Auto-capture GPS on mount
   useEffect(() => {
@@ -28,59 +46,50 @@ export default function DeclarePage() {
     e.preventDefault();
     setStatus("loading");
     setMessage("");
+    setFieldErrors({});
+
+    // Client-side validation first
+    const input = {
+      declared_weight_kg: parseFloat(weight) || 0,
+      gps_lat: gpsLat ? parseFloat(gpsLat) : null,
+      gps_lng: gpsLng ? parseFloat(gpsLng) : null,
+      field_notes: notes || null,
+      captured_at: !isOnline ? new Date().toISOString() : null,
+    };
+
+    const clientValidation = declareSchema.safeParse(input);
+    if (!clientValidation.success) {
+      const errors: Record<string, string[]> = {};
+      for (const issue of clientValidation.error.issues) {
+        const field = issue.path.join(".");
+        if (!errors[field]) errors[field] = [];
+        errors[field].push(issue.message);
+      }
+      setFieldErrors(errors);
+      setStatus("error");
+      setMessage("Validation failed. Please check the fields above.");
+      return;
+    }
 
     try {
-      const supabase = createClient();
+      const result = await declareAction(input);
 
-      // Get current user's operator_id
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not authenticated");
-
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("operator_id")
-        .eq("id", user.id)
-        .single();
-
-      if (!profile?.operator_id) throw new Error("No operator linked to this account");
-
-      // Create gold batch
-      const { data: batch, error: batchError } = await supabase
-        .from("gold_batches")
-        .insert({
-          operator_id: profile.operator_id,
-          declared_weight_kg: parseFloat(weight),
-        })
-        .select()
-        .single();
-
-      if (batchError) throw batchError;
-
-      // Create Node 01 record
-      const { error: nodeError } = await supabase
-        .from("batch_nodes")
-        .insert({
-          batch_id: batch.id,
-          node_number: 1,
-          officer_id: user.id,
-          status: "CONFIRMED",
-          data: {
-            gps_lat: parseFloat(gpsLat) || null,
-            gps_lng: parseFloat(gpsLng) || null,
-            field_notes: notes || null,
-            declared_weight_kg: parseFloat(weight),
-          },
-        });
-
-      if (nodeError) throw nodeError;
-
-      setStatus("success");
-      setMessage(`Batch ${batch.batch_id} declared. Node 01 confirmed. Satellite verification will trigger within 24h.`);
-      setWeight("");
-      setNotes("");
-    } catch (err: any) {
+      if (result.success) {
+        setStatus("success");
+        setMessage(`Batch ${result.batchId} declared. Node 01 confirmed. Satellite verification will trigger within 24h.`);
+        setWeight("");
+        setNotes("");
+        setFieldErrors({});
+      } else {
+        setStatus("error");
+        setMessage(result.error);
+        if (result.fieldErrors) {
+          setFieldErrors(result.fieldErrors);
+        }
+      }
+    } catch {
       setStatus("error");
-      setMessage(err.message || "Failed to submit declaration");
+      setMessage("Failed to submit declaration. Please try again.");
     }
   }
 
@@ -88,6 +97,16 @@ export default function DeclarePage() {
     <div className="space-y-4 max-w-xl">
       <div className="text-[10px] text-gc-green-dim tracking-[1px]">
         $ thegoldchain declare --node-01 --production
+      </div>
+
+      {/* Online/Offline indicator */}
+      <div className="flex items-center gap-2 text-[9px] tracking-[1px]">
+        <span className={isOnline ? "text-gc-green" : "text-gc-amber"}>
+          {isOnline ? "\u25CF" : "\u25CB"}
+        </span>
+        <span className={isOnline ? "text-gc-green-dim" : "text-gc-amber"}>
+          {isOnline ? "NETWORK ONLINE" : "OFFLINE MODE — DECLARATION WILL BE QUEUED"}
+        </span>
       </div>
 
       <div className="terminal-panel">
@@ -111,89 +130,115 @@ export default function DeclarePage() {
             Ensure all data is accurate before submitting.
           </div>
 
-          {/* Weight */}
-          <div>
-            <label className="text-[8px] text-gc-green-muted tracking-[1.5px] block mb-1">
-              DECLARED_WEIGHT_KG *
-            </label>
-            <input
-              type="number"
-              step="0.0001"
-              min="0.001"
-              value={weight}
-              onChange={(e) => setWeight(e.target.value)}
-              className="w-full bg-transparent border border-gc-border rounded-gc px-3 py-2 text-[11px] text-gc-gold font-mono outline-none focus:border-gc-green-dim caret-gc-green"
-              placeholder="12.4000"
-              required
-            />
-          </div>
-
-          {/* GPS Coordinates */}
-          <div className="grid grid-cols-2 gap-3">
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Weight */}
             <div>
               <label className="text-[8px] text-gc-green-muted tracking-[1.5px] block mb-1">
-                GPS_LAT
+                DECLARED_WEIGHT_KG *
               </label>
               <input
-                type="text"
-                value={gpsLat}
-                onChange={(e) => setGpsLat(e.target.value)}
-                className="w-full bg-transparent border border-gc-border rounded-gc px-3 py-2 text-[11px] text-gc-green font-mono outline-none focus:border-gc-green-dim caret-gc-green"
-                placeholder="5.3019"
+                type="number"
+                step="0.0001"
+                min="0.001"
+                value={weight}
+                onChange={(e) => setWeight(e.target.value)}
+                className="w-full bg-transparent border border-gc-border rounded-gc px-3 py-2 text-[11px] text-gc-gold font-mono outline-none focus:border-gc-green-dim caret-gc-green"
+                placeholder="12.4000"
+                required
               />
+              {fieldErrors.declared_weight_kg && (
+                <div className="text-gc-red text-[9px] mt-1">
+                  {fieldErrors.declared_weight_kg.join(", ")}
+                </div>
+              )}
             </div>
+
+            {/* GPS Coordinates */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[8px] text-gc-green-muted tracking-[1.5px] block mb-1">
+                  GPS_LAT
+                </label>
+                <input
+                  type="text"
+                  value={gpsLat}
+                  onChange={(e) => setGpsLat(e.target.value)}
+                  className="w-full bg-transparent border border-gc-border rounded-gc px-3 py-2 text-[11px] text-gc-green font-mono outline-none focus:border-gc-green-dim caret-gc-green"
+                  placeholder="5.3019"
+                />
+                {fieldErrors.gps_lat && (
+                  <div className="text-gc-red text-[9px] mt-1">
+                    {fieldErrors.gps_lat.join(", ")}
+                  </div>
+                )}
+              </div>
+              <div>
+                <label className="text-[8px] text-gc-green-muted tracking-[1.5px] block mb-1">
+                  GPS_LNG
+                </label>
+                <input
+                  type="text"
+                  value={gpsLng}
+                  onChange={(e) => setGpsLng(e.target.value)}
+                  className="w-full bg-transparent border border-gc-border rounded-gc px-3 py-2 text-[11px] text-gc-green font-mono outline-none focus:border-gc-green-dim caret-gc-green"
+                  placeholder="-2.0152"
+                />
+                {fieldErrors.gps_lng && (
+                  <div className="text-gc-red text-[9px] mt-1">
+                    {fieldErrors.gps_lng.join(", ")}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Field Notes */}
             <div>
               <label className="text-[8px] text-gc-green-muted tracking-[1.5px] block mb-1">
-                GPS_LNG
+                FIELD_NOTES
               </label>
-              <input
-                type="text"
-                value={gpsLng}
-                onChange={(e) => setGpsLng(e.target.value)}
-                className="w-full bg-transparent border border-gc-border rounded-gc px-3 py-2 text-[11px] text-gc-green font-mono outline-none focus:border-gc-green-dim caret-gc-green"
-                placeholder="-2.0152"
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={3}
+                maxLength={500}
+                className="w-full bg-transparent border border-gc-border rounded-gc px-3 py-2 text-[11px] text-gc-green font-mono outline-none focus:border-gc-green-dim caret-gc-green resize-none"
+                placeholder="Morning extraction, Pit B-7"
               />
+              {fieldErrors.field_notes && (
+                <div className="text-gc-red text-[9px] mt-1">
+                  {fieldErrors.field_notes.join(", ")}
+                </div>
+              )}
+              <div className="text-[8px] text-gc-border text-right mt-0.5">
+                {notes.length}/500
+              </div>
             </div>
-          </div>
 
-          {/* Field Notes */}
-          <div>
-            <label className="text-[8px] text-gc-green-muted tracking-[1.5px] block mb-1">
-              FIELD_NOTES
-            </label>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              rows={3}
-              className="w-full bg-transparent border border-gc-border rounded-gc px-3 py-2 text-[11px] text-gc-green font-mono outline-none focus:border-gc-green-dim caret-gc-green resize-none"
-              placeholder="Morning extraction, Pit B-7"
-            />
-          </div>
-
-          {/* Status messages */}
-          {status === "success" && (
-            <div className="text-gc-green text-[10px] border border-gc-green/30 bg-gc-green/5 px-3 py-2 rounded-gc glow-text">
-              {message}
-            </div>
-          )}
-          {status === "error" && (
-            <div className="text-gc-red text-[10px] border border-gc-red/30 bg-gc-red/5 px-3 py-2 rounded-gc">
-              ERR: {message}
-            </div>
-          )}
-
-          {/* Submit */}
-          <button
-            onClick={handleSubmit}
-            disabled={status === "loading" || !weight}
-            className="w-full border border-gc-green-dim bg-gc-green/5 text-gc-green text-[11px] tracking-[1px] py-3 rounded-gc font-mono hover:bg-gc-green/10 hover:border-gc-green transition-all disabled:opacity-50"
-          >
-            {status === "loading" ? (
-              <span className="animate-blink">WRITING TO BLOCKCHAIN...</span>
-            ) : (
-              "[ SUBMIT DECLARATION → NODE 01 ]"
+            {/* Status messages */}
+            {status === "success" && (
+              <div className="text-gc-green text-[10px] border border-gc-green/30 bg-gc-green/5 px-3 py-2 rounded-gc glow-text">
+                {message}
+              </div>
             )}
-          </button>
+            {status === "error" && (
+              <div className="text-gc-red text-[10px] border border-gc-red/30 bg-gc-red/5 px-3 py-2 rounded-gc">
+                ERR: {message}
+              </div>
+            )}
+
+            {/* Submit */}
+            <button
+              type="submit"
+              disabled={status === "loading" || !weight}
+              className="w-full border border-gc-green-dim bg-gc-green/5 text-gc-green text-[11px] tracking-[1px] py-3 rounded-gc font-mono hover:bg-gc-green/10 hover:border-gc-green transition-all disabled:opacity-50"
+            >
+              {status === "loading" ? (
+                <span className="animate-blink">WRITING TO BLOCKCHAIN...</span>
+              ) : (
+                "[ SUBMIT DECLARATION \u2192 NODE 01 ]"
+              )}
+            </button>
+          </form>
 
           <div className="text-[8px] text-gc-border tracking-[1px] text-center">
             SATELLITE VERIFICATION WILL BE TRIGGERED AUTOMATICALLY WITHIN 24H

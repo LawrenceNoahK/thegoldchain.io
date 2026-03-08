@@ -25,8 +25,8 @@ const config: Config = {
         },
       },
       fontFamily: {
-        mono: ["Fira Code", "Share Tech Mono", "monospace"],
-        vt: ["VT323", "monospace"],
+        mono: ["var(--font-fira-code)", "Share Tech Mono", "monospace"],
+        vt: ["var(--font-vt323)", "monospace"],
         share: ["Share Tech Mono", "monospace"],
       },
       borderRadius: {

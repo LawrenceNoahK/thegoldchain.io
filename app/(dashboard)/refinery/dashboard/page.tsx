@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { intakeAction } from "@/lib/actions/intake";
 
 export default function RefineryDashboard() {
   const [batches, setBatches] = useState<any[]>([]);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<Record<string, string>>({});
   const [intakeWeight, setIntakeWeight] = useState<Record<string, string>>({});
 
   async function fetchBatches() {
@@ -32,30 +34,26 @@ export default function RefineryDashboard() {
     if (!weight) return;
 
     setActionLoading(batch.id);
+    setActionError((prev) => {
+      const next = { ...prev };
+      delete next[batch.id];
+      return next;
+    });
+
     try {
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not authenticated");
+      const result = await intakeAction({
+        batch_id: batch.id,
+        intake_weight_kg: parseFloat(weight),
+      });
 
-      const { error } = await supabase
-        .from("batch_nodes")
-        .insert({
-          batch_id: batch.id,
-          node_number: 3,
-          officer_id: user.id,
-          status: "CONFIRMED",
-          data: {
-            action: "INTAKE_CONFIRMED",
-            intake_weight_kg: parseFloat(weight),
-            declared_weight_kg: batch.declared_weight_kg,
-          },
-        });
-
-      if (error) throw error;
-      setIntakeWeight((prev) => ({ ...prev, [batch.id]: "" }));
-      await fetchBatches();
-    } catch (err: any) {
-      console.error("Intake confirmation failed:", err.message);
+      if (result.success) {
+        setIntakeWeight((prev) => ({ ...prev, [batch.id]: "" }));
+        await fetchBatches();
+      } else {
+        setActionError((prev) => ({ ...prev, [batch.id]: result.error }));
+      }
+    } catch {
+      setActionError((prev) => ({ ...prev, [batch.id]: "Intake confirmation failed" }));
     } finally {
       setActionLoading(null);
     }
@@ -122,13 +120,24 @@ export default function RefineryDashboard() {
                     </td>
                     <td className="py-2 px-2">
                       {needsIntake && (
-                        <button
-                          onClick={() => handleConfirmIntake(batch)}
-                          disabled={actionLoading === batch.id || !intakeWeight[batch.id]}
-                          className="text-[9px] text-gc-cyan border border-gc-cyan/30 px-2 py-1 rounded-gc hover:bg-gc-cyan/10 transition-all tracking-[0.5px] disabled:opacity-50"
-                        >
-                          {actionLoading === batch.id ? "..." : "CONFIRM INTAKE"}
-                        </button>
+                        <div className="space-y-1">
+                          <button
+                            onClick={() => handleConfirmIntake(batch)}
+                            disabled={actionLoading === batch.id || !intakeWeight[batch.id]}
+                            className="text-[9px] text-gc-cyan border border-gc-cyan/30 px-2 py-1 rounded-gc hover:bg-gc-cyan/10 transition-all tracking-[0.5px] disabled:opacity-50"
+                          >
+                            {actionLoading === batch.id ? (
+                              <span className="animate-blink">...</span>
+                            ) : (
+                              "CONFIRM INTAKE"
+                            )}
+                          </button>
+                          {actionError[batch.id] && (
+                            <div className="text-[8px] text-gc-red max-w-[140px] truncate" title={actionError[batch.id]}>
+                              {actionError[batch.id]}
+                            </div>
+                          )}
+                        </div>
                       )}
                     </td>
                   </tr>

@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { approveAction } from "@/lib/actions/approvals";
 
 export default function GoldbodDashboard() {
   const [batches, setBatches] = useState<any[]>([]);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<Record<string, string>>({});
 
   async function fetchBatches() {
     const supabase = createClient();
@@ -28,29 +30,22 @@ export default function GoldbodDashboard() {
 
   async function handleApprove(batch: any) {
     setActionLoading(batch.id);
+    setActionError((prev) => {
+      const next = { ...prev };
+      delete next[batch.id];
+      return next;
+    });
+
     try {
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not authenticated");
+      const result = await approveAction({ batch_id: batch.id });
 
-      const { error } = await supabase
-        .from("batch_nodes")
-        .insert({
-          batch_id: batch.id,
-          node_number: 2,
-          officer_id: user.id,
-          status: "CONFIRMED",
-          data: {
-            action: "APPROVED",
-            license_number: batch.operators?.license_number,
-            batch_weight_kg: batch.declared_weight_kg,
-          },
-        });
-
-      if (error) throw error;
-      await fetchBatches();
-    } catch (err: any) {
-      console.error("Approve failed:", err.message);
+      if (result.success) {
+        await fetchBatches();
+      } else {
+        setActionError((prev) => ({ ...prev, [batch.id]: result.error }));
+      }
+    } catch {
+      setActionError((prev) => ({ ...prev, [batch.id]: "Approval request failed" }));
     } finally {
       setActionLoading(null);
     }
@@ -114,7 +109,7 @@ export default function GoldbodDashboard() {
             <tbody>
               {batches.map((batch: any) => {
                 const confirmedNodes = batch.batch_nodes?.filter((n: any) => n.status === "CONFIRMED").length || 0;
-                const satStatus = batch.satellite_checks?.[0]?.overall_status || "—";
+                const satStatus = batch.satellite_checks?.[0]?.overall_status || "\u2014";
                 const statusColor =
                   batch.status === "CERTIFIED" ? "text-gc-green" :
                   batch.status === "FLAGGED" ? "text-gc-red" :
@@ -134,13 +129,24 @@ export default function GoldbodDashboard() {
                     </td>
                     <td className="py-2 px-2">
                       {batch.status === "PENDING" && satStatus === "PASS" && (
-                        <button
-                          onClick={() => handleApprove(batch)}
-                          disabled={actionLoading === batch.id}
-                          className="text-[9px] text-gc-green border border-gc-green/30 px-2 py-1 rounded-gc hover:bg-gc-green/10 transition-all tracking-[0.5px] disabled:opacity-50"
-                        >
-                          {actionLoading === batch.id ? "..." : "APPROVE"}
-                        </button>
+                        <div className="space-y-1">
+                          <button
+                            onClick={() => handleApprove(batch)}
+                            disabled={actionLoading === batch.id}
+                            className="text-[9px] text-gc-green border border-gc-green/30 px-2 py-1 rounded-gc hover:bg-gc-green/10 transition-all tracking-[0.5px] disabled:opacity-50"
+                          >
+                            {actionLoading === batch.id ? (
+                              <span className="animate-blink">...</span>
+                            ) : (
+                              "APPROVE"
+                            )}
+                          </button>
+                          {actionError[batch.id] && (
+                            <div className="text-[8px] text-gc-red max-w-[120px] truncate" title={actionError[batch.id]}>
+                              {actionError[batch.id]}
+                            </div>
+                          )}
+                        </div>
                       )}
                       {batch.status === "FLAGGED" && (
                         <span className="text-[9px] text-gc-red tracking-[0.5px]">REVIEW</span>
