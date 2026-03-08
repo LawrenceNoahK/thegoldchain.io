@@ -4,6 +4,8 @@
 
 Ghana Gold Board Act 2025 (Act 1140) · EU CSDDD Directive 2024/1760 · Hyperledger Fabric
 
+![THE GOLDCHAIN — Terminal Dashboard](public/screenshot-dashboard.png)
+
 ---
 
 ## The Problem
