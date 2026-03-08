@@ -1,5 +1,10 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
+import { TerminalPanel } from "@/components/TerminalPanel";
+import { InfoCard } from "@/components/MetricCard";
+import { StatusBadge, SatBadge } from "@/components/StatusBadge";
+import { ChainProgress } from "@/components/ChainProgress";
+import { BatchTable, type Column } from "@/components/BatchTable";
 
 export default async function OperatorDashboard() {
   const supabase = createClient();
@@ -21,7 +26,6 @@ export default async function OperatorDashboard() {
     );
   }
 
-  // Fetch operator info
   const { data: operator } = await supabase
     .from("operators")
     .select("name, license_number, region, status")
@@ -39,109 +43,72 @@ export default async function OperatorDashboard() {
     .order("created_at", { ascending: false })
     .limit(20);
 
+  const columns: Column<any>[] = [
+    {
+      key: "batch_id",
+      label: "BATCH_ID",
+      render: (b) => <span className="text-gc-green-mid">{b.batch_id}</span>,
+    },
+    {
+      key: "weight",
+      label: "WEIGHT_KG",
+      render: (b) => <span className="text-gc-gold font-mono">{b.declared_weight_kg}</span>,
+    },
+    {
+      key: "status",
+      label: "STATUS",
+      render: (b) => <StatusBadge status={b.status} />,
+    },
+    {
+      key: "chain",
+      label: "CHAIN",
+      render: (b) => <ChainProgress nodes={b.batch_nodes || []} />,
+    },
+    {
+      key: "sat",
+      label: "SAT_CHECK",
+      render: (b) => <SatBadge status={b.satellite_checks?.[0]?.overall_status || "PENDING"} />,
+    },
+    {
+      key: "date",
+      label: "DATE",
+      render: (b) => (
+        <span className="text-gc-green-muted">
+          {new Date(b.created_at).toLocaleDateString()}
+        </span>
+      ),
+    },
+  ];
+
   return (
     <div className="space-y-4">
       <div className="text-[10px] text-gc-green-dim tracking-[1px]">
         $ thegoldchain operator --dashboard --batches
       </div>
 
-      {/* Operator Info Panel */}
       {operator && (
         <div className="grid grid-cols-4 gap-3">
-          {[
-            { label: "OPERATOR", value: operator.name, color: "text-gc-green" },
-            { label: "LICENSE", value: operator.license_number, color: "text-gc-gold" },
-            { label: "REGION", value: operator.region, color: "text-gc-green-dim" },
-            { label: "STATUS", value: operator.status?.toUpperCase(), color: operator.status === "active" ? "text-gc-green" : "text-gc-red" },
-          ].map((m) => (
-            <div key={m.label} className="border border-gc-border bg-gc-green/[0.02] rounded-gc p-3">
-              <div className="text-[8px] text-gc-green-muted tracking-[1.5px] mb-1">{m.label}</div>
-              <div className={`text-[11px] font-mono ${m.color} truncate`}>{m.value}</div>
-            </div>
-          ))}
+          <InfoCard label="OPERATOR" value={operator.name} color="text-gc-green" />
+          <InfoCard label="LICENSE" value={operator.license_number} color="text-gc-gold" />
+          <InfoCard label="REGION" value={operator.region} color="text-gc-green-dim" />
+          <InfoCard
+            label="STATUS"
+            value={operator.status?.toUpperCase()}
+            color={operator.status === "active" ? "text-gc-green" : "text-gc-red"}
+          />
         </div>
       )}
 
-      <div className="terminal-panel">
-        <div className="panel-titlebar">
-          <div className="flex gap-[5px]">
-            <div className="w-[7px] h-[7px] rounded-full border border-gc-red bg-gc-red/30" />
-            <div className="w-[7px] h-[7px] rounded-full border border-gc-amber bg-gc-amber/30" />
-            <div className="w-[7px] h-[7px] rounded-full border border-gc-green bg-gc-green/30" />
-          </div>
-          <span className="text-[10px] text-gc-green tracking-[2px] font-medium">
-            [ MY.BATCHES ]
-          </span>
-          <span className="text-[9px] text-gc-green-muted tracking-[1px]">
-            {batches?.length || 0} RECORDS
-          </span>
+      <TerminalPanel title="MY.BATCHES" subtitle={`${batches?.length || 0} RECORDS`}>
+        <div className="p-4">
+          <BatchTable
+            columns={columns}
+            data={batches || []}
+            rowKey={(b) => b.id}
+            emptyMessage="No batches declared yet. Use DECLARE to submit your first production batch."
+          />
         </div>
-        <div className="relative z-[1] p-4">
-          {!batches || batches.length === 0 ? (
-            <div className="text-gc-green-dim text-[11px] py-8 text-center">
-              No batches declared yet. Use DECLARE to submit your first production batch.
-            </div>
-          ) : (
-            <table className="w-full text-[10px]">
-              <thead>
-                <tr className="text-gc-green-dim border-b border-gc-border">
-                  <th className="text-left py-2 px-2 font-normal tracking-[1px]">BATCH_ID</th>
-                  <th className="text-left py-2 px-2 font-normal tracking-[1px]">WEIGHT_KG</th>
-                  <th className="text-left py-2 px-2 font-normal tracking-[1px]">STATUS</th>
-                  <th className="text-left py-2 px-2 font-normal tracking-[1px]">CHAIN</th>
-                  <th className="text-left py-2 px-2 font-normal tracking-[1px]">SAT_CHECK</th>
-                  <th className="text-left py-2 px-2 font-normal tracking-[1px]">DATE</th>
-                </tr>
-              </thead>
-              <tbody>
-                {batches.map((batch: any) => {
-                  const nodes = batch.batch_nodes || [];
-                  const confirmedNodes = nodes.filter((n: any) => n.status === "CONFIRMED").length;
-                  const satStatus = batch.satellite_checks?.[0]?.overall_status || "PENDING";
-
-                  // Show which specific nodes are confirmed
-                  const nodeIndicators = [1, 2, 3, 4].map((num) => {
-                    const node = nodes.find((n: any) => n.node_number === num);
-                    if (!node) return "text-gc-border";
-                    if (node.status === "CONFIRMED") return "text-gc-green";
-                    if (node.status === "FLAGGED") return "text-gc-red";
-                    return "text-gc-amber";
-                  });
-
-                  const statusColor =
-                    batch.status === "CERTIFIED" ? "text-gc-green" :
-                    batch.status === "FLAGGED" ? "text-gc-red" :
-                    batch.status === "PENDING" ? "text-gc-amber" : "text-gc-green-mid";
-
-                  return (
-                    <tr key={batch.id} className="border-b border-gc-border/50 hover:bg-gc-green/5 transition-all">
-                      <td className="py-2 px-2 text-gc-green-mid">{batch.batch_id}</td>
-                      <td className="py-2 px-2 text-gc-gold font-mono">{batch.declared_weight_kg}</td>
-                      <td className={`py-2 px-2 ${statusColor}`}>[{batch.status}]</td>
-                      <td className="py-2 px-2">
-                        <div className="flex gap-1 items-center">
-                          {nodeIndicators.map((color, i) => (
-                            <span key={i} className={`text-[8px] ${color}`}>
-                              {color === "text-gc-green" ? "\u25CF" : color === "text-gc-red" ? "\u25CF" : "\u25CB"}
-                            </span>
-                          ))}
-                          <span className="text-gc-green-dim text-[8px] ml-1">{confirmedNodes}/4</span>
-                        </div>
-                      </td>
-                      <td className={`py-2 px-2 ${satStatus === "PASS" ? "text-gc-green" : satStatus === "FAIL" ? "text-gc-red" : "text-gc-amber"}`}>
-                        {satStatus}
-                      </td>
-                      <td className="py-2 px-2 text-gc-green-muted">
-                        {new Date(batch.created_at).toLocaleDateString()}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
+      </TerminalPanel>
     </div>
   );
 }

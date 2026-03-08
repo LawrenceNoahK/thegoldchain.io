@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { declareAction } from "@/lib/actions/declarations";
 import { declareSchema } from "@/lib/validations";
 import { useOnlineStatus, useOfflineDeclaration } from "@/lib/offline/hooks";
+import { TerminalPanel } from "@/components/TerminalPanel";
 
 export default function DeclarePage() {
   const [weight, setWeight] = useState("");
@@ -168,22 +169,8 @@ export default function DeclarePage() {
         </div>
       )}
 
-      <div className="terminal-panel">
-        <div className="panel-titlebar">
-          <div className="flex gap-[5px]">
-            <div className="w-[7px] h-[7px] rounded-full border border-gc-red bg-gc-red/30" />
-            <div className="w-[7px] h-[7px] rounded-full border border-gc-amber bg-gc-amber/30" />
-            <div className="w-[7px] h-[7px] rounded-full border border-gc-green bg-gc-green/30" />
-          </div>
-          <span className="text-[10px] text-gc-green tracking-[2px] font-medium">
-            [ NODE.01.MINE.DECLARATION ]
-          </span>
-          <span className="text-[9px] text-gc-green-muted tracking-[1px]">
-            FIELD FORM
-          </span>
-        </div>
-
-        <div className="relative z-[1] p-6 space-y-4">
+      <TerminalPanel title="NODE.01.MINE.DECLARATION" subtitle="FIELD FORM">
+        <div className="p-6 space-y-4">
           <div className="text-[9px] text-gc-amber border border-gc-amber/30 bg-gc-amber/5 px-3 py-2 rounded-gc">
             This declaration creates an immutable Node 01 record on the Hyperledger Fabric blockchain.
             Ensure all data is accurate before submitting.
@@ -307,25 +294,16 @@ export default function DeclarePage() {
             SATELLITE VERIFICATION WILL BE TRIGGERED AUTOMATICALLY WITHIN 24H
           </div>
         </div>
-      </div>
+      </TerminalPanel>
 
       {/* Pending Queue */}
       {queuedDeclarations.length > 0 && (
-        <div className="terminal-panel">
-          <div className="panel-titlebar">
-            <div className="flex gap-[5px]">
-              <div className="w-[7px] h-[7px] rounded-full border border-gc-red bg-gc-red/30" />
-              <div className="w-[7px] h-[7px] rounded-full border border-gc-amber bg-gc-amber/30" />
-              <div className="w-[7px] h-[7px] rounded-full border border-gc-green bg-gc-green/30" />
-            </div>
-            <span className="text-[10px] text-gc-amber tracking-[2px] font-medium">
-              [ PENDING.QUEUE ]
-            </span>
-            <span className="text-[9px] text-gc-green-muted tracking-[1px]">
-              {queuedDeclarations.length} WAITING
-            </span>
-          </div>
-          <div className="relative z-[1] p-4 space-y-2">
+        <TerminalPanel
+          title="PENDING.QUEUE"
+          titleColor="text-gc-amber"
+          subtitle={`${queuedDeclarations.length} WAITING`}
+        >
+          <div className="p-4 space-y-2">
             {queuedDeclarations.map((d) => (
               <div
                 key={d.id}
@@ -355,26 +333,17 @@ export default function DeclarePage() {
               </button>
             )}
           </div>
-        </div>
+        </TerminalPanel>
       )}
 
       {/* Failed Declarations */}
       {failedDeclarations.length > 0 && (
-        <div className="terminal-panel">
-          <div className="panel-titlebar">
-            <div className="flex gap-[5px]">
-              <div className="w-[7px] h-[7px] rounded-full border border-gc-red bg-gc-red/30" />
-              <div className="w-[7px] h-[7px] rounded-full border border-gc-amber bg-gc-amber/30" />
-              <div className="w-[7px] h-[7px] rounded-full border border-gc-green bg-gc-green/30" />
-            </div>
-            <span className="text-[10px] text-gc-red tracking-[2px] font-medium">
-              [ FAILED.DECLARATIONS ]
-            </span>
-            <span className="text-[9px] text-gc-red tracking-[1px]">
-              {failedDeclarations.length}
-            </span>
-          </div>
-          <div className="relative z-[1] p-4 space-y-2">
+        <TerminalPanel
+          title="FAILED.DECLARATIONS"
+          titleColor="text-gc-red"
+          subtitle={String(failedDeclarations.length)}
+        >
+          <div className="p-4 space-y-2">
             {failedDeclarations.map((d) => (
               <div
                 key={d.id}
@@ -387,7 +356,7 @@ export default function DeclarePage() {
               </div>
             ))}
           </div>
-        </div>
+        </TerminalPanel>
       )}
     </div>
   );
