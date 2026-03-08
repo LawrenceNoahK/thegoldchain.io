@@ -5,7 +5,7 @@
 
 import { TerminalPanel } from "./TerminalPanel";
 
-function Pulse({ className = "" }: { className?: string }) {
+export function Pulse({ className = "" }: { className?: string }) {
   return (
     <div
       className={`bg-gc-green/10 rounded-gc animate-pulse ${className}`}

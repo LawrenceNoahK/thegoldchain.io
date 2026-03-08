@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { intakeAction } from "@/lib/actions/intake";
 import { TerminalPanel } from "@/components/TerminalPanel";
 import { StatusBadge } from "@/components/StatusBadge";
 import { BatchTable, type Column } from "@/components/BatchTable";
+import { useRouter } from "next/navigation";
 
 export default function RefineryDashboard() {
   const [batches, setBatches] = useState<any[]>([]);
@@ -13,9 +14,34 @@ export default function RefineryDashboard() {
   const [actionError, setActionError] = useState<Record<string, string>>({});
   const [actionWarning, setActionWarning] = useState<Record<string, string>>({});
   const [intakeWeight, setIntakeWeight] = useState<Record<string, string>>({});
+  const [authChecked, setAuthChecked] = useState(false);
+  const router = useRouter();
+  const supabase = useMemo(() => createClient(), []);
+
+  // Auth guard: verify user has refinery or admin role
+  useEffect(() => {
+    async function checkAuth() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        router.push("/login");
+        return;
+      }
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .single();
+
+      if (!profile || !["refinery", "admin"].includes(profile.role)) {
+        router.push("/login");
+        return;
+      }
+      setAuthChecked(true);
+    }
+    checkAuth();
+  }, [supabase, router]);
 
   const fetchBatches = useCallback(async () => {
-    const supabase = createClient();
     const { data } = await supabase
       .from("gold_batches")
       .select(`
@@ -27,11 +53,49 @@ export default function RefineryDashboard() {
       .order("created_at", { ascending: false })
       .limit(30);
     setBatches(data || []);
-  }, []);
+  }, [supabase]);
 
+  // Fetch + Realtime subscription
   useEffect(() => {
-    fetchBatches();
-  }, [fetchBatches]);
+    if (!authChecked) return;
+
+    let mounted = true;
+
+    const safeFetch = async () => {
+      const { data } = await supabase
+        .from("gold_batches")
+        .select(`
+          *,
+          operators (name, region),
+          batch_nodes (node_number, status, tx_hash, timestamp, data)
+        `)
+        .in("status", ["NODE_02_APPROVED", "NODE_03_CONFIRMED", "CERTIFIED"])
+        .order("created_at", { ascending: false })
+        .limit(30);
+      if (mounted) setBatches(data || []);
+    };
+
+    safeFetch();
+
+    const channel = supabase
+      .channel("refinery-batches")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "gold_batches" },
+        () => { if (mounted) safeFetch(); }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "batch_nodes" },
+        () => { if (mounted) safeFetch(); }
+      )
+      .subscribe();
+
+    return () => {
+      mounted = false;
+      void supabase.removeChannel(channel);
+    };
+  }, [supabase, authChecked]);
 
   function getWeightDiscrepancy(batch: any, inputWeight: string): number | null {
     if (!inputWeight) return null;
@@ -79,6 +143,8 @@ export default function RefineryDashboard() {
       setActionLoading(null);
     }
   }
+
+  if (!authChecked) return null;
 
   const columns: Column<any>[] = [
     {

@@ -1,8 +1,5 @@
 import { TerminalPanel } from "@/components/TerminalPanel";
-
-function Pulse({ className = "" }: { className?: string }) {
-  return <div className={`bg-gc-green/10 rounded-gc animate-pulse ${className}`} />;
-}
+import { Pulse } from "@/components/Skeleton";
 
 export default function Loading() {
   return (

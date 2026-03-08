@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { approveAction } from "@/lib/actions/approvals";
 import { TerminalPanel } from "@/components/TerminalPanel";
@@ -8,14 +8,40 @@ import { MetricCard } from "@/components/MetricCard";
 import { StatusBadge, SatBadge } from "@/components/StatusBadge";
 import { ChainProgress } from "@/components/ChainProgress";
 import { BatchTable, type Column } from "@/components/BatchTable";
+import { useRouter } from "next/navigation";
 
 export default function GoldbodDashboard() {
   const [batches, setBatches] = useState<any[]>([]);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [actionError, setActionError] = useState<Record<string, string>>({});
+  const [authChecked, setAuthChecked] = useState(false);
+  const router = useRouter();
+  const supabase = useMemo(() => createClient(), []);
+
+  // Auth guard: verify user has goldbod_officer or admin role
+  useEffect(() => {
+    async function checkAuth() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        router.push("/login");
+        return;
+      }
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .single();
+
+      if (!profile || !["goldbod_officer", "admin"].includes(profile.role)) {
+        router.push("/login");
+        return;
+      }
+      setAuthChecked(true);
+    }
+    checkAuth();
+  }, [supabase, router]);
 
   const fetchBatches = useCallback(async () => {
-    const supabase = createClient();
     const { data } = await supabase
       .from("gold_batches")
       .select(`
@@ -27,37 +53,54 @@ export default function GoldbodDashboard() {
       .order("created_at", { ascending: false })
       .limit(50);
     setBatches(data || []);
-  }, []);
+  }, [supabase]);
 
+  // Fetch + Realtime subscription
   useEffect(() => {
-    fetchBatches();
+    if (!authChecked) return;
 
-    const supabase = createClient();
+    let mounted = true;
+
+    const safeFetch = async () => {
+      const { data } = await supabase
+        .from("gold_batches")
+        .select(`
+          *,
+          operators (name, license_number, region),
+          batch_nodes (node_number, status, tx_hash, timestamp, data),
+          satellite_checks (overall_status, flagged_details)
+        `)
+        .order("created_at", { ascending: false })
+        .limit(50);
+      if (mounted) setBatches(data || []);
+    };
+
+    safeFetch();
+
     const channel = supabase
       .channel("goldbod-batches")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "gold_batches" },
-        () => { fetchBatches(); }
+        () => { if (mounted) safeFetch(); }
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "batch_nodes" },
-        () => { fetchBatches(); }
+        () => { if (mounted) safeFetch(); }
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "satellite_checks" },
-        () => { fetchBatches(); }
+        () => { if (mounted) safeFetch(); }
       )
       .subscribe();
 
     return () => {
-      channel.unsubscribe().then(() => {
-        supabase.removeChannel(channel);
-      });
+      mounted = false;
+      void supabase.removeChannel(channel);
     };
-  }, [fetchBatches]);
+  }, [supabase, authChecked]);
 
   async function handleApprove(batch: any) {
     setActionLoading(batch.id);
@@ -81,6 +124,8 @@ export default function GoldbodDashboard() {
       setActionLoading(null);
     }
   }
+
+  if (!authChecked) return null;
 
   const pending = batches.filter((b) => b.status === "PENDING");
   const approved = batches.filter((b) => b.status === "NODE_02_APPROVED");

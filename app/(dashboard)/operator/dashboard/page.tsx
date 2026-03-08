@@ -93,7 +93,7 @@ export default async function OperatorDashboard() {
           <InfoCard label="REGION" value={operator.region} color="text-gc-green-dim" />
           <InfoCard
             label="STATUS"
-            value={operator.status?.toUpperCase()}
+            value={operator.status?.toUpperCase() ?? "UNKNOWN"}
             color={operator.status === "active" ? "text-gc-green" : "text-gc-red"}
           />
         </div>

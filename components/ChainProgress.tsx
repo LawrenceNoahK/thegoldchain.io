@@ -29,7 +29,7 @@ export function ChainProgress({ nodes, showCount = true }: ChainProgressProps) {
     <div className="flex gap-1 items-center">
       {indicators.map((color, i) => (
         <span key={i} className={`text-[8px] ${color}`}>
-          {color === "text-gc-border" || color === "text-gc-amber" ? "\u25CB" : "\u25CF"}
+          {color === "text-gc-red" ? "\u2718" : color === "text-gc-border" || color === "text-gc-amber" ? "\u25CB" : "\u25CF"}
         </span>
       ))}
       {showCount && (

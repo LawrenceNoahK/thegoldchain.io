@@ -42,6 +42,7 @@ export function BatchTable<T>({
           {columns.map((col) => (
             <th
               key={col.key}
+              scope="col"
               className={`${col.align === "right" ? "text-right" : "text-left"} py-2 px-2 font-normal tracking-[1px]`}
             >
               {col.label}

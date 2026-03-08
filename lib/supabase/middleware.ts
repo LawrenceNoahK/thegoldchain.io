@@ -62,14 +62,24 @@ export async function updateSession(request: NextRequest) {
       const role = profile.role;
       const isAdmin = role === "admin";
 
+      // Map roles to their URL path segments
+      const ROLE_PATH: Record<string, string> = {
+        operator: "operator",
+        goldbod_officer: "goldbod",
+        refinery: "refinery",
+        auditor: "goldbod", // auditors view GoldBod dashboard (read-only)
+        admin: "operator",  // fallback for admin
+      };
+      const rolePath = ROLE_PATH[role] || "operator";
+
       if (pathname.startsWith("/operator") && role !== "operator" && !isAdmin) {
-        return NextResponse.redirect(new URL(`/${role === "goldbod_officer" ? "goldbod" : role}/dashboard`, request.url));
+        return NextResponse.redirect(new URL(`/${rolePath}/dashboard`, request.url));
       }
       if (pathname.startsWith("/goldbod") && role !== "goldbod_officer" && !isAdmin) {
-        return NextResponse.redirect(new URL(`/${role}/dashboard`, request.url));
+        return NextResponse.redirect(new URL(`/${rolePath}/dashboard`, request.url));
       }
       if (pathname.startsWith("/refinery") && role !== "refinery" && !isAdmin) {
-        return NextResponse.redirect(new URL(`/${role === "goldbod_officer" ? "goldbod" : role}/dashboard`, request.url));
+        return NextResponse.redirect(new URL(`/${rolePath}/dashboard`, request.url));
       }
     }
   }
