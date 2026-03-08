@@ -1,0 +1,126 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;400;500;600;700&family=Share+Tech+Mono&family=VT323&display=swap');
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    background: #020A04;
+    color: #00FF41;
+    font-family: 'Fira Code', 'Share Tech Mono', monospace;
+  }
+
+  ::-webkit-scrollbar {
+    width: 3px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #020A04;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #0D3015;
+  }
+}
+
+@layer components {
+  /* CRT scanline overlay */
+  .gc-scanlines::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0, 255, 65, 0.015) 2px,
+      rgba(0, 255, 65, 0.015) 4px
+    );
+    pointer-events: none;
+    z-index: 999;
+  }
+
+  /* CRT vignette */
+  .gc-vignette::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(ellipse at center, transparent 60%, rgba(0, 0, 0, 0.7) 100%);
+    pointer-events: none;
+    z-index: 998;
+  }
+
+  /* Horizontal scan line */
+  .gc-scan-line {
+    position: fixed;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: rgba(0, 255, 65, 0.08);
+    animation: scanH 10s linear infinite;
+    pointer-events: none;
+    z-index: 997;
+  }
+
+  /* Terminal panel */
+  .terminal-panel {
+    background: #030D05;
+    border: 1px solid #0D3015;
+    border-radius: 2px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .terminal-panel::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 23px,
+      rgba(0, 255, 65, 0.02) 23px,
+      rgba(0, 255, 65, 0.02) 24px
+    );
+    pointer-events: none;
+  }
+
+  /* Glow text */
+  .glow-text {
+    text-shadow: 0 0 8px #00FF41, 0 0 16px rgba(0, 255, 65, 0.4);
+  }
+
+  .glow-gold {
+    text-shadow: 0 0 8px #D4A800, 0 0 16px rgba(212, 168, 0, 0.4);
+  }
+
+  /* Panel titlebar */
+  .panel-titlebar {
+    border-bottom: 1px solid #0D3015;
+    padding: 5px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(0, 255, 65, 0.03);
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Progress bar */
+  .gc-progress-bar {
+    height: 3px;
+    background: #0D3015;
+    overflow: hidden;
+    border-radius: 1px;
+  }
+
+  .gc-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #007A1F, #00FF41, #007A1F);
+    background-size: 200% 100%;
+    animation: progressShimmer 2s linear infinite;
+  }
+}
