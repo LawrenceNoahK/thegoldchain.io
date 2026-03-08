@@ -63,11 +63,11 @@ export async function declareAction(input: DeclareInput): Promise<DeclareResult>
     }
 
     // 4. Rate limit: 10 declarations per hour
-    const rateLimitResult = rateLimit(`declare:${user.id}`, 10, 60 * 60 * 1000);
+    const rateLimitResult = await rateLimit(`declare:${user.id}`, 10, 60 * 60 * 1000);
     if (!rateLimitResult.success) {
       return {
         success: false,
-        error: `Rate limit exceeded. ${rateLimitResult.remaining} declarations remaining. Try again after ${new Date(rateLimitResult.resetAt).toISOString()}`,
+        error: "Rate limit exceeded. Please try again later.",
       };
     }
 
@@ -82,7 +82,7 @@ export async function declareAction(input: DeclareInput): Promise<DeclareResult>
       .single();
 
     if (batchError || !batch) {
-      return { success: false, error: batchError?.message || "Failed to create batch" };
+      return { success: false, error: "Failed to create batch. Please try again." };
     }
 
     // 6. Insert batch_node (Node 01)
@@ -103,12 +103,11 @@ export async function declareAction(input: DeclareInput): Promise<DeclareResult>
     });
 
     if (nodeError) {
-      return { success: false, error: nodeError.message || "Failed to create node record" };
+      return { success: false, error: "Failed to create declaration record. Please try again." };
     }
 
     return { success: true, batchId: batch.batch_id };
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "An unexpected error occurred";
-    return { success: false, error: message };
+  } catch {
+    return { success: false, error: "An unexpected error occurred. Please try again." };
   }
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { approveAction } from "@/lib/actions/approvals";
 
@@ -9,7 +9,7 @@ export default function GoldbodDashboard() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [actionError, setActionError] = useState<Record<string, string>>({});
 
-  async function fetchBatches() {
+  const fetchBatches = useCallback(async () => {
     const supabase = createClient();
     const { data } = await supabase
       .from("gold_batches")
@@ -22,11 +22,36 @@ export default function GoldbodDashboard() {
       .order("created_at", { ascending: false })
       .limit(50);
     setBatches(data || []);
-  }
+  }, []);
 
+  // Initial fetch + Realtime subscription
   useEffect(() => {
     fetchBatches();
-  }, []);
+
+    const supabase = createClient();
+    const channel = supabase
+      .channel("goldbod-batches")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "gold_batches" },
+        () => { fetchBatches(); }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "batch_nodes" },
+        () => { fetchBatches(); }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "satellite_checks" },
+        () => { fetchBatches(); }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchBatches]);
 
   async function handleApprove(batch: any) {
     setActionLoading(batch.id);
@@ -75,6 +100,12 @@ export default function GoldbodDashboard() {
             <div className={`text-xl font-vt tracking-[1px] ${m.color}`}>{m.value}</div>
           </div>
         ))}
+      </div>
+
+      {/* Live indicator */}
+      <div className="flex items-center gap-2 text-[8px] text-gc-green-dim tracking-[1px]">
+        <span className="text-gc-green animate-blink">{"\u25CF"}</span>
+        REALTIME CONNECTED
       </div>
 
       {/* Batch table */}

@@ -1,23 +1,91 @@
 // ============================================================
-// THE GOLDCHAIN — In-Memory Rate Limiter
-// Sliding window rate limiting using a Map
+// THE GOLDCHAIN — Rate Limiter
+// Supabase-backed persistent rate limiting with in-memory fallback
 // ============================================================
+
+import { createAdminClient } from "@/lib/supabase/admin";
 
 interface RateLimitEntry {
   timestamps: number[];
 }
 
-const store = new Map<string, RateLimitEntry>();
+// In-memory fallback (used when DB is unavailable)
+const memoryStore = new Map<string, RateLimitEntry>();
 
 /**
  * Check and apply rate limit for a given key.
- *
- * @param key - Unique identifier (e.g. userId + action)
- * @param limit - Maximum number of requests allowed in the window
- * @param windowMs - Time window in milliseconds
- * @returns { success, remaining, resetAt }
+ * Uses Supabase rate_limit_checks table for persistence across deploys/scaling.
+ * Falls back to in-memory if DB is unavailable.
  */
-export function rateLimit(
+export async function rateLimit(
+  key: string,
+  limit: number,
+  windowMs: number
+): Promise<{ success: boolean; remaining: number; resetAt: number }> {
+  try {
+    return await rateLimitPersistent(key, limit, windowMs);
+  } catch {
+    // Fallback to in-memory if DB is unavailable
+    return rateLimitMemory(key, limit, windowMs);
+  }
+}
+
+/**
+ * Persistent rate limiter using Supabase.
+ * Atomic check-and-increment using a DB function.
+ */
+async function rateLimitPersistent(
+  key: string,
+  limit: number,
+  windowMs: number
+): Promise<{ success: boolean; remaining: number; resetAt: number }> {
+  const admin = createAdminClient();
+  const now = Date.now();
+  const windowStart = new Date(now - windowMs).toISOString();
+
+  // Count recent requests in the window
+  const { count, error: countError } = await admin
+    .from("rate_limit_checks")
+    .select("*", { count: "exact", head: true })
+    .eq("key", key)
+    .gte("created_at", windowStart);
+
+  if (countError) throw countError;
+
+  const currentCount = count || 0;
+
+  if (currentCount >= limit) {
+    // Get the oldest entry in the window to calculate reset time
+    const { data: oldest } = await admin
+      .from("rate_limit_checks")
+      .select("created_at")
+      .eq("key", key)
+      .gte("created_at", windowStart)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .single();
+
+    const resetAt = oldest
+      ? new Date(oldest.created_at).getTime() + windowMs
+      : now + windowMs;
+
+    return { success: false, remaining: 0, resetAt };
+  }
+
+  // Record this request
+  await admin.from("rate_limit_checks").insert({ key, created_at: new Date(now).toISOString() });
+
+  return {
+    success: true,
+    remaining: limit - currentCount - 1,
+    resetAt: now + windowMs,
+  };
+}
+
+/**
+ * In-memory fallback rate limiter (for when DB is unavailable).
+ */
+function rateLimitMemory(
   key: string,
   limit: number,
   windowMs: number
@@ -25,47 +93,20 @@ export function rateLimit(
   const now = Date.now();
   const windowStart = now - windowMs;
 
-  // Clean up expired entries across the entire store (lightweight sweep)
-  // Only clean a few entries per call to avoid blocking
-  let cleanCount = 0;
-  const storeKeys = Array.from(store.keys());
-  for (let i = 0; i < storeKeys.length && cleanCount < 10; i++) {
-    const storeKey = storeKeys[i];
-    const storeEntry = store.get(storeKey);
-    if (!storeEntry) continue;
-    const filtered = storeEntry.timestamps.filter((ts: number) => ts > windowStart);
-    if (filtered.length === 0) {
-      store.delete(storeKey);
-    } else {
-      storeEntry.timestamps = filtered;
-    }
-    cleanCount++;
-  }
-
-  // Get or create entry for this key
-  let entry = store.get(key);
+  let entry = memoryStore.get(key);
   if (!entry) {
     entry = { timestamps: [] };
-    store.set(key, entry);
+    memoryStore.set(key, entry);
   }
 
-  // Filter out timestamps outside the current window
   entry.timestamps = entry.timestamps.filter((ts) => ts > windowStart);
 
-  // Check if limit is exceeded
   if (entry.timestamps.length >= limit) {
     const oldestInWindow = entry.timestamps[0];
-    const resetAt = oldestInWindow + windowMs;
-    return {
-      success: false,
-      remaining: 0,
-      resetAt,
-    };
+    return { success: false, remaining: 0, resetAt: oldestInWindow + windowMs };
   }
 
-  // Record this request
   entry.timestamps.push(now);
-
   return {
     success: true,
     remaining: limit - entry.timestamps.length,

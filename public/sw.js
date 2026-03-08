@@ -3,13 +3,16 @@
 // Cache-first for shell, network-first for data, background sync
 // ============================================================
 
-const SHELL_CACHE = "goldchain-shell-v1";
-const DATA_CACHE = "goldchain-data-v1";
+const SHELL_CACHE = "goldchain-shell-v2";
+const DATA_CACHE = "goldchain-data-v2";
 
 // App shell files to pre-cache on install
 const SHELL_FILES = [
   "/manifest.json",
 ];
+
+// Sync lock to prevent concurrent sync operations
+let syncInProgress = false;
 
 // ---- Install: pre-cache app shell ----
 self.addEventListener("install", (event) => {
@@ -19,16 +22,21 @@ self.addEventListener("install", (event) => {
   self.skipWaiting();
 });
 
-// ---- Activate: clean old caches ----
+// ---- Activate: clean old caches, notify clients of update ----
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(
+    caches.keys().then(async (keys) => {
+      await Promise.all(
         keys
           .filter((key) => key !== SHELL_CACHE && key !== DATA_CACHE)
           .map((key) => caches.delete(key))
-      )
-    )
+      );
+      // Notify all clients that a new version is available
+      const clients = await self.clients.matchAll();
+      for (const client of clients) {
+        client.postMessage({ type: "SW_UPDATED" });
+      }
+    })
   );
   self.clients.claim();
 });
@@ -84,14 +92,21 @@ self.addEventListener("sync", (event) => {
 });
 
 async function syncDeclarations() {
-  // Import the queue module is not possible in SW context,
-  // so we directly interact with IndexedDB
+  // Prevent concurrent sync (main thread drainQueue may also be running)
+  if (syncInProgress) return;
+  syncInProgress = true;
+
   try {
     const db = await openIndexedDB();
     const tx = db.transaction("pending-declarations", "readonly");
     const store = tx.objectStore("pending-declarations");
     const index = store.index("status");
     const pending = await getAllFromIndex(index, "pending");
+
+    if (pending.length === 0) {
+      syncInProgress = false;
+      return;
+    }
 
     for (const declaration of pending) {
       try {
@@ -101,18 +116,22 @@ async function syncDeclarations() {
           body: JSON.stringify({
             declaration: declaration.payload,
             hmac: declaration.hmac,
-            authToken: declaration.authToken,
+            idempotencyKey: declaration.idempotencyKey,
+            // SW cannot get fresh token — it uses the last known token
+            // If this fails with 401, the main thread drainQueue will handle it
+            authToken: declaration.authToken || "",
           }),
         });
 
         const updateTx = db.transaction("pending-declarations", "readwrite");
         const updateStore = updateTx.objectStore("pending-declarations");
 
-        if (response.ok) {
+        if (response.ok || response.status === 409) {
+          // Success or duplicate — safe to delete
           await deleteRecord(updateStore, declaration.id);
         } else if (response.status === 401) {
-          declaration.status = "pending";
-          declaration.errorMessage = "Auth token expired";
+          // Token expired — leave for main thread drainQueue to handle
+          declaration.errorMessage = "Session expired";
           await putRecord(updateStore, declaration);
         } else if (response.status === 422) {
           declaration.status = "failed";
@@ -136,6 +155,8 @@ async function syncDeclarations() {
     }
   } catch {
     // IndexedDB not available
+  } finally {
+    syncInProgress = false;
   }
 }
 
@@ -190,17 +211,19 @@ async function networkFirst(request, cacheName, maxAge) {
 
 function openIndexedDB() {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open("goldchain-offline", 1);
+    const request = indexedDB.open("goldchain-offline", 2);
     request.onupgradeneeded = () => {
       const db = request.result;
-      if (!db.objectStoreNames.contains("pending-declarations")) {
-        const store = db.createObjectStore("pending-declarations", {
-          keyPath: "id",
-          autoIncrement: true,
-        });
-        store.createIndex("status", "status");
-        store.createIndex("createdAt", "createdAt");
+      if (db.objectStoreNames.contains("pending-declarations")) {
+        db.deleteObjectStore("pending-declarations");
       }
+      const store = db.createObjectStore("pending-declarations", {
+        keyPath: "id",
+        autoIncrement: true,
+      });
+      store.createIndex("status", "status");
+      store.createIndex("createdAt", "createdAt");
+      store.createIndex("idempotencyKey", "idempotencyKey", { unique: true });
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);

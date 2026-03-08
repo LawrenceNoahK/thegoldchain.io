@@ -86,9 +86,9 @@ export default function DeclarePage() {
         setWeight("");
         setNotes("");
         setFieldErrors({});
-      } catch {
+      } catch (err) {
         setStatus("error");
-        setMessage("Failed to queue declaration offline. Please try again.");
+        setMessage(err instanceof Error ? err.message : "Failed to queue declaration offline. Please try again.");
       }
       return;
     }
@@ -142,6 +142,13 @@ export default function DeclarePage() {
         )}
       </div>
 
+      {/* Token expired banner */}
+      {syncStatus === "token_expired" && (
+        <div className="text-[9px] text-gc-red border border-gc-red/30 bg-gc-red/5 px-3 py-2 rounded-gc tracking-[1px]">
+          SESSION EXPIRED — Please <a href="/login" className="underline">log in again</a> to sync pending declarations.
+        </div>
+      )}
+
       {/* Sync status banner */}
       {syncStatus === "syncing" && (
         <div className="text-[9px] text-gc-cyan border border-gc-cyan/30 bg-gc-cyan/5 px-3 py-2 rounded-gc animate-blink tracking-[1px]">
@@ -184,7 +191,7 @@ export default function DeclarePage() {
               <input
                 type="number"
                 step="0.0001"
-                min="0.001"
+                min="0.0001"
                 value={weight}
                 onChange={(e) => setWeight(e.target.value)}
                 className="w-full bg-transparent border border-gc-border rounded-gc px-3 py-2 text-[11px] text-gc-gold font-mono outline-none focus:border-gc-green-dim caret-gc-green"

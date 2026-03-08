@@ -8,6 +8,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { getAllDeclarations, getPendingCount, type PendingDeclaration } from "./db";
 import { enqueueDeclaration, drainQueue, type SyncResult } from "./queue";
+import { fetchHmacSecret, hasHmacSecret } from "./hmac";
 import { createClient } from "@/lib/supabase/client";
 
 /**
@@ -48,7 +49,7 @@ export function useOnlineStatus() {
  */
 export function useOfflineDeclaration() {
   const [pendingDeclarations, setPendingDeclarations] = useState<PendingDeclaration[]>([]);
-  const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "done" | "error">("idle");
+  const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "done" | "error" | "token_expired">("idle");
   const [lastSyncResult, setLastSyncResult] = useState<SyncResult | null>(null);
 
   const refreshQueue = useCallback(async () => {
@@ -60,6 +61,21 @@ export function useOfflineDeclaration() {
     }
   }, []);
 
+  // Pre-fetch HMAC secret while online (cached in memory only)
+  useEffect(() => {
+    async function prefetchSecret() {
+      if (!hasHmacSecret()) {
+        try {
+          const supabase = createClient();
+          await fetchHmacSecret(supabase);
+        } catch {
+          // Will retry when user tries to submit
+        }
+      }
+    }
+    prefetchSecret();
+  }, []);
+
   // Load queue on mount
   useEffect(() => {
     refreshQueue();
@@ -68,6 +84,13 @@ export function useOfflineDeclaration() {
   // Auto-sync when coming back online
   useEffect(() => {
     async function handleOnline() {
+      // Re-fetch HMAC secret in case it expired
+      try {
+        const supabase = createClient();
+        await fetchHmacSecret(supabase);
+      } catch {
+        // Will fail gracefully in sync
+      }
       await syncNow();
     }
 
@@ -77,8 +100,8 @@ export function useOfflineDeclaration() {
   }, []);
 
   /**
-   * Submit a declaration — online: server action, offline: queue.
-   * Returns { queued: true, localId } if offline.
+   * Submit a declaration to the offline queue.
+   * HMAC secret must be available (pre-fetched while online).
    */
   const submit = useCallback(async (
     input: {
@@ -88,14 +111,16 @@ export function useOfflineDeclaration() {
       field_notes: string | null;
     }
   ): Promise<{ queued: true; localId: number }> => {
-    const supabase = createClient();
-    const { data: { session } } = await supabase.auth.getSession();
-
-    if (!session?.access_token) {
-      throw new Error("Not authenticated — cannot queue declaration");
+    // Get HMAC secret (from memory cache or fetch fresh)
+    let secret: string;
+    try {
+      const supabase = createClient();
+      secret = await fetchHmacSecret(supabase);
+    } catch {
+      throw new Error("Cannot queue declaration — HMAC secret unavailable. Were you online when you logged in?");
     }
 
-    const localId = await enqueueDeclaration(input, session.access_token);
+    const localId = await enqueueDeclaration(input, secret);
     await refreshQueue();
     return { queued: true, localId };
   }, [refreshQueue]);
@@ -108,11 +133,18 @@ export function useOfflineDeclaration() {
     try {
       const result = await drainQueue();
       setLastSyncResult(result);
-      setSyncStatus(result.failed > 0 ? "error" : "done");
-      await refreshQueue();
 
-      // Reset status after 5 seconds
-      setTimeout(() => setSyncStatus("idle"), 5000);
+      if (result.tokenExpired) {
+        setSyncStatus("token_expired");
+        // Don't auto-reset — user needs to see re-login prompt
+      } else if (result.failed > 0) {
+        setSyncStatus("error");
+        setTimeout(() => setSyncStatus("idle"), 5000);
+      } else {
+        setSyncStatus("done");
+        setTimeout(() => setSyncStatus("idle"), 5000);
+      }
+      await refreshQueue();
     } catch {
       setSyncStatus("error");
       setTimeout(() => setSyncStatus("idle"), 5000);

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Fira_Code, VT323 } from "next/font/google";
 import "./globals.css";
+import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistration";
 
 const firaCode = Fira_Code({
   subsets: ["latin"],
@@ -33,17 +34,7 @@ export default function RootLayout({
       <body className="gc-scanlines gc-vignette animate-flicker min-h-screen">
         <div className="gc-scan-line" />
         {children}
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              if ('serviceWorker' in navigator) {
-                window.addEventListener('load', function() {
-                  navigator.serviceWorker.register('/sw.js').catch(function() {});
-                });
-              }
-            `,
-          }}
-        />
+        <ServiceWorkerRegistration />
       </body>
     </html>
   );

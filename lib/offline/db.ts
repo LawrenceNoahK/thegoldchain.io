@@ -1,12 +1,16 @@
 // ============================================================
 // THE GOLDCHAIN — IndexedDB Offline Storage
 // Stores pending declarations for background sync
+//
+// SECURITY: Auth tokens are NOT stored here. They are retrieved
+// fresh from Supabase session at sync time.
+// HMAC secrets are NOT stored here. They are cached in memory only.
 // ============================================================
 
 import { openDB, type IDBPDatabase } from "idb";
 
 const DB_NAME = "goldchain-offline";
-const DB_VERSION = 1;
+const DB_VERSION = 2; // Bumped for schema change (removed authToken)
 const STORE_NAME = "pending-declarations";
 
 export interface PendingDeclaration {
@@ -19,7 +23,7 @@ export interface PendingDeclaration {
     captured_at: string;
   };
   hmac: string;
-  authToken: string;
+  idempotencyKey: string; // SHA-256 hash of operator_id + payload for dedup
   status: "pending" | "syncing" | "synced" | "failed";
   retryCount: number;
   errorMessage?: string;
@@ -31,7 +35,11 @@ let dbPromise: Promise<IDBPDatabase> | null = null;
 function getDB() {
   if (!dbPromise) {
     dbPromise = openDB(DB_NAME, DB_VERSION, {
-      upgrade(db) {
+      upgrade(db, oldVersion) {
+        // Delete old store if upgrading from v1 (had authToken)
+        if (oldVersion < 2 && db.objectStoreNames.contains(STORE_NAME)) {
+          db.deleteObjectStore(STORE_NAME);
+        }
         if (!db.objectStoreNames.contains(STORE_NAME)) {
           const store = db.createObjectStore(STORE_NAME, {
             keyPath: "id",
@@ -39,6 +47,7 @@ function getDB() {
           });
           store.createIndex("status", "status");
           store.createIndex("createdAt", "createdAt");
+          store.createIndex("idempotencyKey", "idempotencyKey", { unique: true });
         }
       },
     });
@@ -50,6 +59,13 @@ export async function addPendingDeclaration(
   declaration: Omit<PendingDeclaration, "id">
 ): Promise<number> {
   const db = await getDB();
+
+  // Check idempotency — don't add if same key already exists
+  const existing = await db.getFromIndex(STORE_NAME, "idempotencyKey", declaration.idempotencyKey);
+  if (existing) {
+    return existing.id as number;
+  }
+
   const id = await db.add(STORE_NAME, declaration);
   return id as number;
 }

@@ -59,11 +59,11 @@ export async function approveAction(input: ApproveInput): Promise<ApproveResult>
     }
 
     // 4. Rate limit: 60 approvals per hour
-    const rateLimitResult = rateLimit(`approve:${user.id}`, 60, 60 * 60 * 1000);
+    const rateLimitResult = await rateLimit(`approve:${user.id}`, 60, 60 * 60 * 1000);
     if (!rateLimitResult.success) {
       return {
         success: false,
-        error: `Rate limit exceeded. Try again after ${new Date(rateLimitResult.resetAt).toISOString()}`,
+        error: "Rate limit exceeded. Please try again later.",
       };
     }
 
@@ -79,10 +79,12 @@ export async function approveAction(input: ApproveInput): Promise<ApproveResult>
     }
 
     if (batch.status !== "PENDING") {
-      return { success: false, error: `Batch status is ${batch.status}, expected PENDING` };
+      return { success: false, error: "Batch is not in PENDING status" };
     }
 
     // 6. Verify satellite check has passed
+    // NOTE: This is also enforced at DB level by enforce_node_order() trigger,
+    // but we check here for better error messages.
     const { data: satCheck, error: satError } = await supabase
       .from("satellite_checks")
       .select("overall_status")
@@ -96,7 +98,7 @@ export async function approveAction(input: ApproveInput): Promise<ApproveResult>
     if (satCheck.overall_status !== "PASS") {
       return {
         success: false,
-        error: `Satellite check status is ${satCheck.overall_status}. Must be PASS before approval.`,
+        error: "Satellite verification must pass before approval",
       };
     }
 
@@ -125,12 +127,15 @@ export async function approveAction(input: ApproveInput): Promise<ApproveResult>
     });
 
     if (nodeError) {
-      return { success: false, error: nodeError.message || "Failed to create approval record" };
+      // DB trigger may block this if satellite check hasn't passed
+      if (nodeError.message?.includes("satellite")) {
+        return { success: false, error: "Satellite verification must pass before approval" };
+      }
+      return { success: false, error: "Failed to create approval record. Please try again." };
     }
 
     return { success: true, batchId: batch.batch_id };
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "An unexpected error occurred";
-    return { success: false, error: message };
+  } catch {
+    return { success: false, error: "An unexpected error occurred. Please try again." };
   }
 }

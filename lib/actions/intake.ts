@@ -5,7 +5,7 @@ import { intakeSchema, type IntakeInput } from "@/lib/validations";
 import { rateLimit } from "@/lib/rate-limit";
 
 export type IntakeResult =
-  | { success: true; batchId: string }
+  | { success: true; batchId: string; weightWarning?: string }
   | { success: false; error: string; fieldErrors?: Record<string, string[]> };
 
 /**
@@ -59,11 +59,11 @@ export async function intakeAction(input: IntakeInput): Promise<IntakeResult> {
     }
 
     // 4. Rate limit: 30 intakes per hour
-    const rateLimitResult = rateLimit(`intake:${user.id}`, 30, 60 * 60 * 1000);
+    const rateLimitResult = await rateLimit(`intake:${user.id}`, 30, 60 * 60 * 1000);
     if (!rateLimitResult.success) {
       return {
         success: false,
-        error: `Rate limit exceeded. Try again after ${new Date(rateLimitResult.resetAt).toISOString()}`,
+        error: "Rate limit exceeded. Please try again later.",
       };
     }
 
@@ -81,11 +81,19 @@ export async function intakeAction(input: IntakeInput): Promise<IntakeResult> {
     if (batch.status !== "NODE_02_APPROVED") {
       return {
         success: false,
-        error: `Batch status is ${batch.status}, expected NODE_02_APPROVED`,
+        error: "Batch is not ready for intake confirmation",
       };
     }
 
-    // 6. Insert batch_node (Node 03)
+    // 6. Pre-check weight discrepancy (warn before DB trigger flags)
+    let weightWarning: string | undefined;
+    const declaredWeight = parseFloat(batch.declared_weight_kg);
+    const discrepancy = Math.abs(data.intake_weight_kg - declaredWeight) / declaredWeight;
+    if (discrepancy > 0.001) {
+      weightWarning = `Weight discrepancy of ${(discrepancy * 100).toFixed(2)}% detected. Batch will be auto-flagged.`;
+    }
+
+    // 7. Insert batch_node (Node 03)
     // The DB trigger (check_weight_reconciliation) will handle:
     //   - Weight discrepancy check (>0.1% → auto-flag)
     //   - Batch status update
@@ -103,12 +111,11 @@ export async function intakeAction(input: IntakeInput): Promise<IntakeResult> {
     });
 
     if (nodeError) {
-      return { success: false, error: nodeError.message || "Failed to create intake record" };
+      return { success: false, error: "Failed to create intake record. Please try again." };
     }
 
-    return { success: true, batchId: batch.batch_id };
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "An unexpected error occurred";
-    return { success: false, error: message };
+    return { success: true, batchId: batch.batch_id, weightWarning };
+  } catch {
+    return { success: false, error: "An unexpected error occurred. Please try again." };
   }
 }
