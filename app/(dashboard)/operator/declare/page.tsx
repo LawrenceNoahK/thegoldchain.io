@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { declareAction } from "@/lib/actions/declarations";
 import { declareSchema } from "@/lib/validations";
+import { useOnlineStatus, useOfflineDeclaration } from "@/lib/offline/hooks";
 
 export default function DeclarePage() {
   const [weight, setWeight] = useState("");
@@ -12,22 +13,9 @@ export default function DeclarePage() {
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [message, setMessage] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
-  const [isOnline, setIsOnline] = useState(true);
 
-  // Track online/offline status
-  useEffect(() => {
-    if (typeof navigator !== "undefined") {
-      setIsOnline(navigator.onLine);
-    }
-    function handleOnline() { setIsOnline(true); }
-    function handleOffline() { setIsOnline(false); }
-    window.addEventListener("online", handleOnline);
-    window.addEventListener("offline", handleOffline);
-    return () => {
-      window.removeEventListener("online", handleOnline);
-      window.removeEventListener("offline", handleOffline);
-    };
-  }, []);
+  const { isOnline, pendingCount } = useOnlineStatus();
+  const { submit: queueOffline, syncNow, pendingDeclarations, syncStatus, lastSyncResult } = useOfflineDeclaration();
 
   // Auto-capture GPS on mount
   useEffect(() => {
@@ -42,13 +30,25 @@ export default function DeclarePage() {
     }
   }, []);
 
+  // Listen for Service Worker sync completion
+  useEffect(() => {
+    if ("serviceWorker" in navigator) {
+      const handler = (event: MessageEvent) => {
+        if (event.data?.type === "SYNC_COMPLETE") {
+          syncNow();
+        }
+      };
+      navigator.serviceWorker.addEventListener("message", handler);
+      return () => navigator.serviceWorker.removeEventListener("message", handler);
+    }
+  }, [syncNow]);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setStatus("loading");
     setMessage("");
     setFieldErrors({});
 
-    // Client-side validation first
     const input = {
       declared_weight_kg: parseFloat(weight) || 0,
       gps_lat: gpsLat ? parseFloat(gpsLat) : null,
@@ -57,6 +57,7 @@ export default function DeclarePage() {
       captured_at: !isOnline ? new Date().toISOString() : null,
     };
 
+    // Client-side validation
     const clientValidation = declareSchema.safeParse(input);
     if (!clientValidation.success) {
       const errors: Record<string, string[]> = {};
@@ -71,6 +72,28 @@ export default function DeclarePage() {
       return;
     }
 
+    // OFFLINE: queue the declaration
+    if (!isOnline) {
+      try {
+        await queueOffline({
+          declared_weight_kg: input.declared_weight_kg,
+          gps_lat: input.gps_lat,
+          gps_lng: input.gps_lng,
+          field_notes: input.field_notes,
+        });
+        setStatus("success");
+        setMessage("Declaration queued offline. Will sync automatically when connectivity returns.");
+        setWeight("");
+        setNotes("");
+        setFieldErrors({});
+      } catch {
+        setStatus("error");
+        setMessage("Failed to queue declaration offline. Please try again.");
+      }
+      return;
+    }
+
+    // ONLINE: submit via server action
     try {
       const result = await declareAction(input);
 
@@ -93,6 +116,9 @@ export default function DeclarePage() {
     }
   }
 
+  const failedDeclarations = pendingDeclarations.filter((d) => d.status === "failed");
+  const queuedDeclarations = pendingDeclarations.filter((d) => d.status === "pending" || d.status === "syncing");
+
   return (
     <div className="space-y-4 max-w-xl">
       <div className="text-[10px] text-gc-green-dim tracking-[1px]">
@@ -100,14 +126,33 @@ export default function DeclarePage() {
       </div>
 
       {/* Online/Offline indicator */}
-      <div className="flex items-center gap-2 text-[9px] tracking-[1px]">
-        <span className={isOnline ? "text-gc-green" : "text-gc-amber"}>
-          {isOnline ? "\u25CF" : "\u25CB"}
-        </span>
-        <span className={isOnline ? "text-gc-green-dim" : "text-gc-amber"}>
-          {isOnline ? "NETWORK ONLINE" : "OFFLINE MODE — DECLARATION WILL BE QUEUED"}
-        </span>
+      <div className="flex items-center justify-between text-[9px] tracking-[1px]">
+        <div className="flex items-center gap-2">
+          <span className={isOnline ? "text-gc-green" : "text-gc-amber"}>
+            {isOnline ? "\u25CF" : "\u25CB"}
+          </span>
+          <span className={isOnline ? "text-gc-green-dim" : "text-gc-amber"}>
+            {isOnline ? "NETWORK ONLINE" : "OFFLINE MODE"}
+          </span>
+        </div>
+        {pendingCount > 0 && (
+          <span className="text-gc-amber">
+            {pendingCount} QUEUED
+          </span>
+        )}
       </div>
+
+      {/* Sync status banner */}
+      {syncStatus === "syncing" && (
+        <div className="text-[9px] text-gc-cyan border border-gc-cyan/30 bg-gc-cyan/5 px-3 py-2 rounded-gc animate-blink tracking-[1px]">
+          SYNCING {queuedDeclarations.length} DECLARATION{queuedDeclarations.length !== 1 ? "S" : ""}...
+        </div>
+      )}
+      {syncStatus === "done" && lastSyncResult && lastSyncResult.synced > 0 && (
+        <div className="text-[9px] text-gc-green border border-gc-green/30 bg-gc-green/5 px-3 py-2 rounded-gc glow-text tracking-[1px]">
+          SYNCED {lastSyncResult.synced} DECLARATION{lastSyncResult.synced !== 1 ? "S" : ""} SUCCESSFULLY
+        </div>
+      )}
 
       <div className="terminal-panel">
         <div className="panel-titlebar">
@@ -233,9 +278,13 @@ export default function DeclarePage() {
               className="w-full border border-gc-green-dim bg-gc-green/5 text-gc-green text-[11px] tracking-[1px] py-3 rounded-gc font-mono hover:bg-gc-green/10 hover:border-gc-green transition-all disabled:opacity-50"
             >
               {status === "loading" ? (
-                <span className="animate-blink">WRITING TO BLOCKCHAIN...</span>
-              ) : (
+                <span className="animate-blink">
+                  {isOnline ? "WRITING TO BLOCKCHAIN..." : "QUEUING OFFLINE..."}
+                </span>
+              ) : isOnline ? (
                 "[ SUBMIT DECLARATION \u2192 NODE 01 ]"
+              ) : (
+                "[ QUEUE DECLARATION (OFFLINE) ]"
               )}
             </button>
           </form>
@@ -245,6 +294,87 @@ export default function DeclarePage() {
           </div>
         </div>
       </div>
+
+      {/* Pending Queue */}
+      {queuedDeclarations.length > 0 && (
+        <div className="terminal-panel">
+          <div className="panel-titlebar">
+            <div className="flex gap-[5px]">
+              <div className="w-[7px] h-[7px] rounded-full border border-gc-red bg-gc-red/30" />
+              <div className="w-[7px] h-[7px] rounded-full border border-gc-amber bg-gc-amber/30" />
+              <div className="w-[7px] h-[7px] rounded-full border border-gc-green bg-gc-green/30" />
+            </div>
+            <span className="text-[10px] text-gc-amber tracking-[2px] font-medium">
+              [ PENDING.QUEUE ]
+            </span>
+            <span className="text-[9px] text-gc-green-muted tracking-[1px]">
+              {queuedDeclarations.length} WAITING
+            </span>
+          </div>
+          <div className="relative z-[1] p-4 space-y-2">
+            {queuedDeclarations.map((d) => (
+              <div
+                key={d.id}
+                className="flex items-center justify-between text-[9px] border-b border-gc-border/20 pb-2"
+              >
+                <div className="flex items-center gap-2">
+                  <span className={d.status === "syncing" ? "text-gc-cyan animate-blink" : "text-gc-amber"}>
+                    {d.status === "syncing" ? "\u25B6" : "\u25CB"}
+                  </span>
+                  <span className="text-gc-gold font-mono">{d.payload.declared_weight_kg} kg</span>
+                  <span className="text-gc-green-muted">
+                    {d.payload.gps_lat?.toFixed(4)}, {d.payload.gps_lng?.toFixed(4)}
+                  </span>
+                </div>
+                <span className="text-gc-green-muted">
+                  {new Date(d.createdAt).toLocaleTimeString()}
+                </span>
+              </div>
+            ))}
+            {isOnline && (
+              <button
+                onClick={syncNow}
+                disabled={syncStatus === "syncing"}
+                className="w-full mt-2 text-[9px] text-gc-green border border-gc-green/30 py-1.5 rounded-gc hover:bg-gc-green/10 transition-all disabled:opacity-50 tracking-[1px]"
+              >
+                {syncStatus === "syncing" ? "SYNCING..." : "[ SYNC NOW ]"}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Failed Declarations */}
+      {failedDeclarations.length > 0 && (
+        <div className="terminal-panel">
+          <div className="panel-titlebar">
+            <div className="flex gap-[5px]">
+              <div className="w-[7px] h-[7px] rounded-full border border-gc-red bg-gc-red/30" />
+              <div className="w-[7px] h-[7px] rounded-full border border-gc-amber bg-gc-amber/30" />
+              <div className="w-[7px] h-[7px] rounded-full border border-gc-green bg-gc-green/30" />
+            </div>
+            <span className="text-[10px] text-gc-red tracking-[2px] font-medium">
+              [ FAILED.DECLARATIONS ]
+            </span>
+            <span className="text-[9px] text-gc-red tracking-[1px]">
+              {failedDeclarations.length}
+            </span>
+          </div>
+          <div className="relative z-[1] p-4 space-y-2">
+            {failedDeclarations.map((d) => (
+              <div
+                key={d.id}
+                className="text-[9px] border-b border-gc-border/20 pb-2"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-gc-gold font-mono">{d.payload.declared_weight_kg} kg</span>
+                  <span className="text-gc-red">{d.errorMessage}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
