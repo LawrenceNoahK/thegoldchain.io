@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { intakeSchema, type IntakeInput } from "@/lib/validations";
 import { rateLimit } from "@/lib/rate-limit";
+import { submitBatchNode } from "@/lib/fabric";
 
 export type IntakeResult =
   | { success: true; batchId: string; weightWarning?: string }
@@ -87,27 +88,37 @@ export async function intakeAction(input: IntakeInput): Promise<IntakeResult> {
 
     // 6. Pre-check weight discrepancy (warn before DB trigger flags)
     let weightWarning: string | undefined;
-    const declaredWeight = parseFloat(batch.declared_weight_kg);
+    const declaredWeight = Number(batch.declared_weight_kg);
     const discrepancy = Math.abs(data.intake_weight_kg - declaredWeight) / declaredWeight;
     if (discrepancy > 0.001) {
       weightWarning = `Weight discrepancy of ${(discrepancy * 100).toFixed(2)}% detected. Batch will be auto-flagged.`;
     }
 
-    // 7. Insert batch_node (Node 03)
+    // 7. Submit to Fabric and insert batch_node (Node 03)
     // The DB trigger (check_weight_reconciliation) will handle:
     //   - Weight discrepancy check (>0.1% → auto-flag)
     //   - Batch status update
+    const nodeData = {
+      action: "INTAKE_CONFIRMED",
+      intake_weight_kg: data.intake_weight_kg,
+      declared_weight_kg: batch.declared_weight_kg,
+    };
+
+    const fabricResult = await submitBatchNode({
+      batchId: batch.batch_id,
+      nodeNumber: 3,
+      officerId: user.id,
+      status: "CONFIRMED",
+      data: nodeData,
+    });
+
     const { error: nodeError } = await supabase.from("batch_nodes").insert({
       batch_id: data.batch_id,
       node_number: 3,
       officer_id: user.id,
       status: "CONFIRMED",
-      tx_hash: "PENDING_FABRIC",
-      data: {
-        action: "INTAKE_CONFIRMED",
-        intake_weight_kg: data.intake_weight_kg,
-        declared_weight_kg: batch.declared_weight_kg,
-      },
+      tx_hash: fabricResult.txHash,
+      data: nodeData,
     });
 
     if (nodeError) {

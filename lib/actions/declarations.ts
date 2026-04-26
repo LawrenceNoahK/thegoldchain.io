@@ -3,9 +3,10 @@
 import { createClient } from "@/lib/supabase/server";
 import { declareSchema, type DeclareInput } from "@/lib/validations";
 import { rateLimit } from "@/lib/rate-limit";
+import { submitBatchNode } from "@/lib/fabric";
 
 export type DeclareResult =
-  | { success: true; batchId: string }
+  | { success: true; batchId: string; txHash: string }
   | { success: false; error: string; fieldErrors?: Record<string, string[]> };
 
 /**
@@ -85,20 +86,31 @@ export async function declareAction(input: DeclareInput): Promise<DeclareResult>
       return { success: false, error: "Failed to create batch. Please try again." };
     }
 
-    // 6. Insert batch_node (Node 01)
+    // 6. Submit to Hyperledger Fabric (or generate stub TX hash)
+    const nodeData = {
+      gps_lat: data.gps_lat ?? null,
+      gps_lng: data.gps_lng ?? null,
+      field_notes: data.field_notes ?? null,
+      declared_weight_kg: data.declared_weight_kg,
+      captured_at: data.captured_at ?? null,
+    };
+
+    const fabricResult = await submitBatchNode({
+      batchId: batch.batch_id,
+      nodeNumber: 1,
+      officerId: user.id,
+      status: "CONFIRMED",
+      data: nodeData,
+    });
+
+    // 7. Insert batch_node (Node 01) with TX hash
     const { error: nodeError } = await supabase.from("batch_nodes").insert({
       batch_id: batch.id,
       node_number: 1,
       officer_id: user.id,
       status: "CONFIRMED",
-      tx_hash: "PENDING_FABRIC",
-      data: {
-        gps_lat: data.gps_lat ?? null,
-        gps_lng: data.gps_lng ?? null,
-        field_notes: data.field_notes ?? null,
-        declared_weight_kg: data.declared_weight_kg,
-        captured_at: data.captured_at ?? null,
-      },
+      tx_hash: fabricResult.txHash,
+      data: nodeData,
       ...(data.captured_at ? { captured_at: data.captured_at } : {}),
     });
 
@@ -106,7 +118,7 @@ export async function declareAction(input: DeclareInput): Promise<DeclareResult>
       return { success: false, error: "Failed to create declaration record. Please try again." };
     }
 
-    return { success: true, batchId: batch.batch_id };
+    return { success: true, batchId: batch.batch_id, txHash: fabricResult.txHash };
   } catch {
     return { success: false, error: "An unexpected error occurred. Please try again." };
   }

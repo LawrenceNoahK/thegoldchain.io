@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { approveSchema, type ApproveInput } from "@/lib/validations";
 import { rateLimit } from "@/lib/rate-limit";
+import { submitBatchNode } from "@/lib/fabric";
 
 export type ApproveResult =
   | { success: true; batchId: string }
@@ -109,21 +110,31 @@ export async function approveAction(input: ApproveInput): Promise<ApproveResult>
       .eq("id", batch.operator_id)
       .single();
 
-    // 8. Insert batch_node (Node 02)
+    // 8. Submit to Fabric and insert batch_node (Node 02)
+    const nodeData = {
+      action: "APPROVED",
+      license_number: operator?.license_number ?? null,
+      batch_weight_kg: batch.declared_weight_kg,
+      assay_ref: data.assay_ref ?? null,
+      export_permit: data.export_permit ?? null,
+      officer_notes: data.officer_notes ?? null,
+    };
+
+    const fabricResult = await submitBatchNode({
+      batchId: batch.batch_id,
+      nodeNumber: 2,
+      officerId: user.id,
+      status: "CONFIRMED",
+      data: nodeData,
+    });
+
     const { error: nodeError } = await supabase.from("batch_nodes").insert({
       batch_id: data.batch_id,
       node_number: 2,
       officer_id: user.id,
       status: "CONFIRMED",
-      tx_hash: "PENDING_FABRIC",
-      data: {
-        action: "APPROVED",
-        license_number: operator?.license_number ?? null,
-        batch_weight_kg: batch.declared_weight_kg,
-        assay_ref: data.assay_ref ?? null,
-        export_permit: data.export_permit ?? null,
-        officer_notes: data.officer_notes ?? null,
-      },
+      tx_hash: fabricResult.txHash,
+      data: nodeData,
     });
 
     if (nodeError) {
