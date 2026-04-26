@@ -100,7 +100,7 @@ export default function DeclarePage() {
 
       if (result.success) {
         setStatus("success");
-        setMessage(`Batch ${result.batchId} declared. Node 01 confirmed. Satellite verification will trigger within 24h.`);
+        setMessage(`Batch ${result.batchId} declared. Node 01 confirmed.\nTX: ${result.txHash}\nSatellite verification will trigger within 24h.`);
         setWeight("");
         setNotes("");
         setFieldErrors({});

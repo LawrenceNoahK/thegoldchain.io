@@ -67,7 +67,7 @@ export default async function OperatorDashboard() {
     {
       key: "sat",
       label: "SAT_CHECK",
-      render: (b) => <SatBadge status={b.satellite_checks?.[0]?.overall_status || "PENDING"} />,
+      render: (b) => <SatBadge status={b.satellite_checks?.overall_status || "PENDING"} />,
     },
     {
       key: "date",

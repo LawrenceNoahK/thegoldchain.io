@@ -45,8 +45,10 @@ const config: Config = {
           "50%": { opacity: "0" },
         },
         scanH: {
-          "0%": { top: "-2px" },
-          "100%": { top: "100vh" },
+          "0%": { top: "-4px", opacity: "0" },
+          "5%": { opacity: "1" },
+          "95%": { opacity: "1" },
+          "100%": { top: "100vh", opacity: "0" },
         },
         flicker: {
           "0%, 97%, 100%": { opacity: "1" },

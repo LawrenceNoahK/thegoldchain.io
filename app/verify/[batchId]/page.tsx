@@ -94,7 +94,7 @@ export default async function VerifyPage({
             <div className="flex justify-between">
               <span className="text-gc-green-dim">issued_at</span>
               <span className="text-gc-green-muted">
-                {new Date(cert.issued_at).toISOString()}
+                {cert.issued_at ? new Date(cert.issued_at).toISOString() : "\u2014"}
               </span>
             </div>
           </div>
@@ -119,6 +119,14 @@ export default async function VerifyPage({
               <span className="text-gc-green-dim">audit_trail_hash</span>
               <span className="text-gc-green font-mono text-[9px] truncate max-w-[200px] glow-text">{cert.audit_trail_hash}</span>
             </div>
+          </div>
+
+          {/* Verification badge */}
+          <div className="flex items-center justify-center gap-2 py-2 border border-gc-green/30 rounded-gc bg-gc-green/5">
+            <span className="text-gc-green glow-text text-[12px]">●</span>
+            <span className="text-gc-green text-[10px] tracking-[1.5px] font-semibold glow-text">
+              BLOCKCHAIN VERIFIED
+            </span>
           </div>
 
           <div className="text-center text-[8px] text-gc-border tracking-[1px]">

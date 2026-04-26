@@ -9,6 +9,7 @@ const STATUS_COLORS: Record<string, string> = {
   PENDING: "text-gc-amber",
   NODE_02_APPROVED: "text-gc-green-mid",
   NODE_03_CONFIRMED: "text-gc-green-mid",
+  REJECTED: "text-gc-red",
 };
 
 const SAT_COLORS: Record<string, string> = {

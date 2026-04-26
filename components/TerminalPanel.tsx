@@ -28,7 +28,7 @@ export function TerminalPanel({
           <div className="w-[7px] h-[7px] rounded-full border border-gc-amber bg-gc-amber/30" />
           <div className="w-[7px] h-[7px] rounded-full border border-gc-green bg-gc-green/30" />
         </div>
-        <span className={`text-[10px] ${titleColor} tracking-[2px] font-medium`}>
+        <span className={`text-[10px] ${titleColor} tracking-[2px] font-medium whitespace-nowrap`}>
           [ {title} ]
         </span>
         {subtitle && (

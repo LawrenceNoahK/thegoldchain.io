@@ -3,18 +3,25 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { approveAction } from "@/lib/actions/approvals";
+import { flagReviewAction } from "@/lib/actions/flag-review";
+import { certifyAction } from "@/lib/certificates";
+import { satelliteVerifyAction } from "@/lib/actions/satellite-verify";
 import { TerminalPanel } from "@/components/TerminalPanel";
 import { MetricCard } from "@/components/MetricCard";
 import { StatusBadge, SatBadge } from "@/components/StatusBadge";
 import { ChainProgress } from "@/components/ChainProgress";
 import { BatchTable, type Column } from "@/components/BatchTable";
+import { BatchDetailPanel } from "@/components/BatchDetailPanel";
 import { useRouter } from "next/navigation";
 
 export default function GoldbodDashboard() {
   const [batches, setBatches] = useState<any[]>([]);
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState<Set<string>>(new Set());
   const [actionError, setActionError] = useState<Record<string, string>>({});
   const [authChecked, setAuthChecked] = useState(false);
+  const [selectedBatch, setSelectedBatch] = useState<any | null>(null);
+  const [reviewAction, setReviewAction] = useState<"OVERRIDE" | "REJECT" | "ESCALATE" | null>(null);
+  const [reviewNotes, setReviewNotes] = useState("");
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
 
@@ -103,7 +110,7 @@ export default function GoldbodDashboard() {
   }, [supabase, authChecked]);
 
   async function handleApprove(batch: any) {
-    setActionLoading(batch.id);
+    setActionLoading((prev) => new Set(prev).add(batch.id));
     setActionError((prev) => {
       const next = { ...prev };
       delete next[batch.id];
@@ -121,7 +128,87 @@ export default function GoldbodDashboard() {
     } catch {
       setActionError((prev) => ({ ...prev, [batch.id]: "Approval request failed" }));
     } finally {
-      setActionLoading(null);
+      setActionLoading((prev) => { const next = new Set(prev); next.delete(batch.id); return next; });
+    }
+  }
+
+  async function handleSatVerify(batch: any) {
+    setActionLoading((prev) => new Set(prev).add(batch.id));
+    setActionError((prev) => {
+      const next = { ...prev };
+      delete next[batch.id];
+      return next;
+    });
+
+    try {
+      const result = await satelliteVerifyAction({ batch_id: batch.id });
+      if (result.success) {
+        await fetchBatches();
+      } else {
+        setActionError((prev) => ({ ...prev, [batch.id]: result.error }));
+      }
+    } catch {
+      setActionError((prev) => ({ ...prev, [batch.id]: "Satellite verification failed" }));
+    } finally {
+      setActionLoading((prev) => { const next = new Set(prev); next.delete(batch.id); return next; });
+    }
+  }
+
+  async function handleCertify(batch: any) {
+    setActionLoading((prev) => new Set(prev).add(batch.id));
+    setActionError((prev) => {
+      const next = { ...prev };
+      delete next[batch.id];
+      return next;
+    });
+
+    try {
+      const result = await certifyAction({ batch_id: batch.id });
+      if (result.success) {
+        await fetchBatches();
+      } else {
+        setActionError((prev) => ({ ...prev, [batch.id]: result.error }));
+      }
+    } catch {
+      setActionError((prev) => ({ ...prev, [batch.id]: "Certification failed" }));
+    } finally {
+      setActionLoading((prev) => { const next = new Set(prev); next.delete(batch.id); return next; });
+    }
+  }
+
+  async function handleFlagReview() {
+    if (!selectedBatch || !reviewAction) return;
+
+    const batchId = selectedBatch.id;
+    setActionLoading((prev) => new Set(prev).add(batchId));
+    setActionError((prev) => {
+      const next = { ...prev };
+      delete next[batchId];
+      return next;
+    });
+
+    try {
+      const result = await flagReviewAction({
+        batch_id: batchId,
+        action: reviewAction,
+        officer_notes: reviewNotes,
+      });
+
+      if (result.success) {
+        setSelectedBatch(null);
+        setReviewAction(null);
+        setReviewNotes("");
+        await fetchBatches();
+      } else {
+        setActionError((prev) => ({
+          ...prev,
+          [batchId]: result.error + (result.fieldErrors ? ` (${Object.values(result.fieldErrors).flat().join(", ")})` : ""),
+        }));
+      }
+    } catch {
+      setActionError((prev) => ({ ...prev, [batchId]: "Flag review request failed" }));
+    } finally {
+      setActionLoading((prev) => { const next = new Set(prev); next.delete(batchId); return next; });
     }
   }
 
@@ -167,23 +254,43 @@ export default function GoldbodDashboard() {
     {
       key: "sat",
       label: "SAT",
-      render: (b) => <SatBadge status={b.satellite_checks?.[0]?.overall_status || "\u2014"} />,
+      render: (b) => <SatBadge status={b.satellite_checks?.overall_status || "\u2014"} />,
     },
     {
       key: "action",
       label: "ACTION",
       render: (batch) => {
-        const satStatus = batch.satellite_checks?.[0]?.overall_status || "\u2014";
+        const satStatus = batch.satellite_checks?.overall_status || "\u2014";
         return (
           <>
+            {batch.status === "PENDING" && satStatus === "\u2014" && (
+              <div className="space-y-1">
+                <button
+                  onClick={() => handleSatVerify(batch)}
+                  disabled={actionLoading.has(batch.id)}
+                  className="text-[9px] text-[#00FFD1] border border-[#00FFD1]/30 px-2 py-1 rounded-gc hover:bg-[#00FFD1]/10 transition-all tracking-[0.5px] disabled:opacity-50"
+                >
+                  {actionLoading.has(batch.id) ? (
+                    <span className="animate-blink">...</span>
+                  ) : (
+                    "SAT VERIFY"
+                  )}
+                </button>
+                {actionError[batch.id] && (
+                  <div className="text-[8px] text-gc-red max-w-[120px] truncate" title={actionError[batch.id]}>
+                    {actionError[batch.id]}
+                  </div>
+                )}
+              </div>
+            )}
             {batch.status === "PENDING" && satStatus === "PASS" && (
               <div className="space-y-1">
                 <button
                   onClick={() => handleApprove(batch)}
-                  disabled={actionLoading === batch.id}
+                  disabled={actionLoading.has(batch.id)}
                   className="text-[9px] text-gc-green border border-gc-green/30 px-2 py-1 rounded-gc hover:bg-gc-green/10 transition-all tracking-[0.5px] disabled:opacity-50"
                 >
-                  {actionLoading === batch.id ? (
+                  {actionLoading.has(batch.id) ? (
                     <span className="animate-blink">...</span>
                   ) : (
                     "APPROVE"
@@ -197,7 +304,32 @@ export default function GoldbodDashboard() {
               </div>
             )}
             {batch.status === "FLAGGED" && (
-              <span className="text-[9px] text-gc-red tracking-[0.5px]">REVIEW</span>
+              <button
+                onClick={() => setSelectedBatch(batch)}
+                className="text-[9px] text-gc-red border border-gc-red/30 px-2 py-1 rounded-gc hover:bg-gc-red/10 transition-all tracking-[0.5px]"
+              >
+                REVIEW
+              </button>
+            )}
+            {batch.status === "NODE_03_CONFIRMED" && (
+              <div className="space-y-1">
+                <button
+                  onClick={() => handleCertify(batch)}
+                  disabled={actionLoading.has(batch.id)}
+                  className="text-[9px] text-gc-gold border border-gc-gold/30 px-2 py-1 rounded-gc hover:bg-gc-gold/10 transition-all tracking-[0.5px] disabled:opacity-50"
+                >
+                  {actionLoading.has(batch.id) ? (
+                    <span className="animate-blink">...</span>
+                  ) : (
+                    "CERTIFY"
+                  )}
+                </button>
+                {actionError[batch.id] && (
+                  <div className="text-[8px] text-gc-red max-w-[120px] truncate" title={actionError[batch.id]}>
+                    {actionError[batch.id]}
+                  </div>
+                )}
+              </div>
             )}
           </>
         );
@@ -233,6 +365,91 @@ export default function GoldbodDashboard() {
           />
         </div>
       </TerminalPanel>
+
+      {/* FLAG Review Detail Panel */}
+      {selectedBatch && (
+        <BatchDetailPanel
+          batch={selectedBatch}
+          onClose={() => {
+            setSelectedBatch(null);
+            setReviewAction(null);
+            setReviewNotes("");
+          }}
+          actions={
+            <div className="space-y-3">
+              {/* Action buttons */}
+              <div className="flex items-center gap-2">
+                {(["OVERRIDE", "REJECT", "ESCALATE"] as const).map((action) => {
+                  const colors: Record<string, string> = {
+                    OVERRIDE: "border-gc-amber/40 text-gc-amber hover:bg-gc-amber/10",
+                    REJECT: "border-gc-red/40 text-gc-red hover:bg-gc-red/10",
+                    ESCALATE: "border-gc-green/40 text-gc-green-dim hover:bg-gc-green/10",
+                  };
+                  return (
+                    <button
+                      key={action}
+                      onClick={() => setReviewAction(action)}
+                      className={`text-[9px] px-3 py-1.5 rounded-gc border tracking-[0.5px] transition-all ${
+                        reviewAction === action
+                          ? `${colors[action]} bg-opacity-20 ring-1 ring-current`
+                          : `${colors[action]} opacity-60`
+                      }`}
+                    >
+                      {action}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Notes textarea */}
+              {reviewAction && (
+                <>
+                  <div>
+                    <label className="text-[8px] text-gc-green-muted tracking-[1.5px] block mb-1">
+                      OFFICER_NOTES (min 10 chars)
+                    </label>
+                    <textarea
+                      value={reviewNotes}
+                      onChange={(e) => setReviewNotes(e.target.value)}
+                      placeholder="Explain your decision..."
+                      rows={3}
+                      className="w-full bg-gc-bg border border-gc-border rounded-gc p-2 text-[10px] text-gc-green font-mono placeholder:text-gc-green-muted/40 focus:outline-none focus:border-gc-green/40 resize-none"
+                    />
+                    <div className="text-[8px] text-gc-green-muted mt-0.5">
+                      {reviewNotes.length}/1000
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handleFlagReview}
+                    disabled={actionLoading.has(selectedBatch.id) || reviewNotes.length < 10}
+                    className={`text-[9px] px-4 py-1.5 rounded-gc border tracking-[0.5px] transition-all disabled:opacity-30 ${
+                      reviewAction === "REJECT"
+                        ? "border-gc-red/40 text-gc-red hover:bg-gc-red/10"
+                        : reviewAction === "OVERRIDE"
+                        ? "border-gc-amber/40 text-gc-amber hover:bg-gc-amber/10"
+                        : "border-gc-green/40 text-gc-green-dim hover:bg-gc-green/10"
+                    }`}
+                  >
+                    {actionLoading.has(selectedBatch.id) ? (
+                      <span className="animate-blink">PROCESSING...</span>
+                    ) : (
+                      `CONFIRM ${reviewAction}`
+                    )}
+                  </button>
+                </>
+              )}
+
+              {/* Error display */}
+              {actionError[selectedBatch.id] && (
+                <div className="text-[9px] text-gc-red border border-gc-red/20 bg-gc-red/5 rounded-gc p-2">
+                  {actionError[selectedBatch.id]}
+                </div>
+              )}
+            </div>
+          }
+        />
+      )}
     </div>
   );
 }

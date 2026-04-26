@@ -54,14 +54,20 @@
     z-index: 998;
   }
 
-  /* Horizontal scan line */
+  /* Horizontal scan line — phosphor sweep */
   .gc-scan-line {
     position: fixed;
     left: 0;
     right: 0;
-    height: 1px;
-    background: rgba(0, 255, 65, 0.08);
-    animation: scanH 10s linear infinite;
+    height: 4px;
+    background: linear-gradient(
+      to bottom,
+      transparent,
+      rgba(0, 255, 65, 0.25) 50%,
+      transparent
+    );
+    box-shadow: 0 0 20px 4px rgba(0, 255, 65, 0.1), 0 0 60px 8px rgba(0, 255, 65, 0.04);
+    animation: scanH 8s linear infinite;
     pointer-events: none;
     z-index: 997;
   }
