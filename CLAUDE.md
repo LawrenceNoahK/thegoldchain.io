@@ -2,7 +2,7 @@
 
 Blockchain gold supply chain traceability platform for Ghana's Gold Board (GoldBod) under the Ghana Gold Board Act 2025 (Act 1140). Every gram of ASM gold gets a 4-node blockchain record from mine to EU refinery. Auto-generates CSDDD compliance certificates (EU Directive 2024/1760).
 
-**CSDDD Timeline Update (Feb 2026):** EU Omnibus I amendment narrowed scope by 70% (now 5,000+ employees, EUR 1.5B+ turnover) and pushed compliance to July 26, 2029 (member state transposition by July 26, 2028). EU refineries handling Ghanaian gold remain in scope.
+**CSDDD Timeline Update (in force March 18, 2026):** Directive (EU) 2026/470 (Omnibus I) is binding law as of 2026-03-18. Scope: 5,000+ employees AND EUR 1.5B+ turnover. Single compliance deadline July 26, 2029, member state transposition by July 26, 2028. Large LBMA refiners handling Ghanaian gold (Argor-Heraeus, Metalor, Valcambi etc.) remain in scope.
 
 ---
 
@@ -85,8 +85,12 @@ NODE 02  GoldBod Export Certification
          Auto:  Blocks if license expired or satellite flag active
 
 NODE 03  Refinery Intake Verification
-         Actor: European refinery
-         Data:  Intake confirmation, reconciled weight
+         Actor: First refinery of intake — defaults to Gold Coast Refinery (operational
+                Feb 4, 2026, GoldBod 15% free-carried interest). EU refinery is now
+                a downstream/secondary stop as Ghana phases out raw gold exports by
+                end-2026. Schema stores refinery_type ('GCR' | 'EU' | 'OTHER') so the
+                4-node topology stays fixed; refinery identity is data, not structure.
+         Data:  Intake confirmation, reconciled weight, refinery_type, refinery_id
          Auto:  Flags if weight discrepancy > 0.1%
 
 NODE 04  CSDDD Certificate Generation
@@ -247,7 +251,7 @@ AWS_SECRET_ACCESS_KEY=
 - [ ] **Module 5** — Satellite verify Edge Function (6 GEE checks), alert on boundary violation
 - [ ] **Module 6** — CSDDD certificate generation, PDF, QR code, public verify page
 - [ ] **Module 7** — Terminal dashboard wired to live Supabase data
-- [ ] **Module 8** — Hyperledger Fabric local network, Go chaincode, TX hash on certs
+- [ ] **Module 8** — Hyperledger Fabric local network, Go chaincode, TX hash on certs. **Target Fabric v3.x (current GA, e.g. 3.1.3) — not 2.5 LTS.** Pin `fabric-contract-api-go` to a 3.x-compatible release in the chaincode `go.mod`.
 
 ---
 
@@ -265,7 +269,7 @@ AWS_SECRET_ACCESS_KEY=
 
 - **Client:** Ghana Gold Board (GoldBod), CEO Sammy Gyamfi Esq.
 - **Regulation:** Ghana Gold Board Act 2025 (Act 1140), EU CSDDD Directive 2024/1760
-- **CSDDD deadline:** July 26, 2029 (compliance), July 26, 2028 (member state transposition) — updated per Omnibus I (Feb 2026)
+- **CSDDD deadline:** July 26, 2029 (compliance), July 26, 2028 (member state transposition) — Directive (EU) 2026/470 (Omnibus I) in force since 2026-03-18
 - **Company:** LNK Engineering Ltd — contact@thegoldchain.io
 - **Repo is private** — do not reference Anthropic, Claude, or AI in any user-facing UI copy
 
@@ -280,6 +284,8 @@ AWS_SECRET_ACCESS_KEY=
 - Estimated smuggling losses 2019–2023: **US$11.4 billion** (Swissaid)
 - 2026 ASM target: **127 tonnes/year** (2.45 tonnes/week)
 - Licensed ASM operators: **15,000+** (MCAS registered)
+- Gold spot price (April 24, 2026): **~$4,709/oz** — well above the $4,500 12%-royalty threshold; some forecasters call $6-7K in 2026
+- **Gold Coast Refinery** operational since Feb 4, 2026 — 500 kg/day single-shift, 180t/year capacity. GoldBod supplies 1 tonne/week. Government plans to **end raw gold exports by end of 2026**.
 
 ### GoldBod Track-and-Trace Procurement
 - Sammy Gyamfi announced blockchain traceability for Q1 2026, **extended to end of 2026** (procurement complexity)
@@ -289,11 +295,12 @@ AWS_SECRET_ACCESS_KEY=
 - GoldBod is sole legal buyer/seller/assayer/exporter of all ASM gold (foreigners banned from local trading April 2025)
 
 ### Active Policy Developments
-- **Royalty sliding scale** (5%→12%) matured in Parliament March 6, 2026. Gold above $5,000/oz hits 12%. US, China, Canada, Australia, South Africa pushing back.
-- **Dubai refining crisis** (March 2026): UAE flights disrupted by US-Israel operation against Iran. Dubai refines 80% of Ghana ASM gold. GoldBod drafting contingency routes to EU and Shanghai refineries.
-- **LBMA certification** push: Ghana building LBMA-standard gold analysis laboratory, expected operational 2026.
-- **National task force** launched to combat gold smuggling.
-- **License reform**: GoldBod suspended Tier 1, Tier 2, and Self-Financing Aggregator license applications pending reforms.
+- **Royalty sliding scale** (5%→12%) **enacted Feb 3, 2026** (21-day implementation). Top tier of 12% triggers above **$4,500/oz** (not $5,000). Growth & Sustainability Levy cut 3%→1% as offset (Mar 14, 2026). Ghana defied US/China/Canada/Australia/South Africa pushback. With gold at ~$4,700+/oz (April 2026), every gram is currently in the 12% bracket — the Node 01↔Node 03 weight reconciliation is now a tax-revenue tool, not just an anti-skimming check.
+- **Dubai refining disruption** (April 6, 2026): Iran missile strike on UAE; Dubai airport ran at ~25% normal for ~7 days. Traffic since recovered, but Ghana has accelerated diversification: Rand Refinery (SA) partnership signed Jan 2026; **Gold Coast Refinery operational Feb 4, 2026** (180t/year capacity, GoldBod 15% free-carried interest). Government plans to **end raw gold exports by end of 2026**.
+- **LBMA certification**: LBMA-standard assay lab still expected operational 2026 (not yet live). Ghana also pursuing first-ever fire assay lab + ISO-certified testing lab. Rand Refinery partnership supplies interim 999.99 capability. **LBMA Responsible Gold Guidance v10** in active public consultation (v9 still binding) — design certificate schema to be RGG v10-extensible.
+- **National task force** delivering results: multiple high-profile arrests (Chinese, Indian nationals), 1.3kg gold + GH¢1.4M cash + 12 shotguns seized in Asankragwa. Smuggling significantly declined per CEO statements.
+- **License reform**: Tier 1, Tier 2, and Self-Financing Aggregator license applications still suspended as of Feb 17, 2026. Only standard Aggregator License remains open. No reopen date announced.
+- **Foreigners ban** on local ASM trading (effective May 1, 2025) still enforced; arrests ongoing.
 
 ### Continental Significance
 - Finance ministers from Liberia, Sierra Leone, The Gambia, Sudan praised GoldBod model at IMF-World Bank meetings
@@ -301,8 +308,12 @@ AWS_SECRET_ACCESS_KEY=
 - Ghana climbed to **5th in Africa's top 25 mining destinations** (up from 10th in 2024)
 
 ### Strategic Implications for TheGoldChain
-- Dubai crisis validates EU refinery route (Node 03 design)
-- Royalty sliding scale increases importance of auditable weight reconciliation (Node 01 vs Node 03)
-- 600-mine pilot creates immediate demand for batch-level traceability
-- CSDDD certificates remain essential — EU refineries for Ghanaian gold are large enough to stay in Omnibus I scope
-- Continental interest = potential scale beyond Ghana
+- **Procurement window still open** — GoldBod blockchain track-and-trace not yet awarded as of April 2026. Most credible competitor: **Minexx** (with Solidaridad) — already exported the first blockchain-tracked gold from Ghana's Obeng Mine. Differentiator: TheGoldChain is Section 31X-native and CSDDD-ready out of the box; Minexx publicly emphasizes neither.
+- **Node 03 must default to Gold Coast Refinery** — GCR is the new mandated first-stop refiner. EU refinery is now downstream. Schema treats refinery identity as data (`refinery_type`) so the 4-node topology stays fixed.
+- **Weight reconciliation is now a tax-revenue tool** — at $4,700+/oz with 12% top-tier royalty active, every 0.1% Node 01↔Node 03 discrepancy is ~$5/g of disputed royalty. Surface this in pitch.
+- **Build Module 8 on Fabric 3.x** — 3.x is current GA; 2.x is on EOL trajectory. Pin chaincode `go.mod` accordingly.
+- **GEE quota tier**: select paid tier or accept Community Tier throttling for `satellite-verify` Edge Function (deadline April 27, 2026).
+- **CSDDD certificate schema must be RGG v10-extensible** — LBMA RGG v10 enters force in 2026. Add audit-trail fields and refiner-transparency markers now.
+- **Multi-tenant by country code** — Sierra Leone explicitly exploring GoldBod-style framework. Architect operator scope by country from the start; first realistic continental expansion target.
+- **600-mine pilot** creates immediate demand for batch-level traceability.
+- **CSDDD certificates remain essential** — large LBMA refiners stay in Omnibus I scope.
