@@ -141,7 +141,7 @@ Flag handling has its own dedicated action -- flagReviewAction -- which gives of
 4.3 Node 03: Refinery Intake Verification
 ------------------------------------------------------------------------
 
-WHO: A European refinery that receives the gold shipment.
+WHO: The first refinery that receives the gold shipment. Defaults to Gold Coast Refinery (GCR) -- operational since February 4, 2026, in which GoldBod holds a 15% free-carried interest. Under current Ghanaian policy, raw gold exports are being phased out by end of 2026, so GCR is the mandated first stop. European refineries become a downstream/secondary intake. The Node 03 record carries a refinery_type field ("GCR" | "EU" | "OTHER") and an optional refinery_name (required when refinery_type is OTHER) -- refinery identity is data on the node, not topology, so the 4-node chain stays fixed.
 
 WHAT: The refinery confirms the intake weight of the received gold and the system automatically reconciles it against the declared weight from Node 01.
 

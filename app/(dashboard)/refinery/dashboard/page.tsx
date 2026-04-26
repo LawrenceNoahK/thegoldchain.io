@@ -218,13 +218,30 @@ export default function RefineryDashboard() {
           <div className="space-y-1">
             <button
               onClick={() => handleConfirmIntake(batch)}
-              disabled={actionLoading === batch.id || !intakeWeight[batch.id]}
+              disabled={
+                actionLoading === batch.id ||
+                !intakeWeight[batch.id] ||
+                (refineryType === "OTHER" && !refineryName.trim())
+              }
+              title={
+                refineryType === "OTHER" && !refineryName.trim()
+                  ? "Provide a refinery_name for OTHER above"
+                  : undefined
+              }
               className="text-[9px] text-gc-cyan border border-gc-cyan/30 px-2 py-1 rounded-gc hover:bg-gc-cyan/10 transition-all tracking-[0.5px] disabled:opacity-50"
             >
               {actionLoading === batch.id ? (
                 <span className="animate-blink">...</span>
               ) : (
-                "CONFIRM INTAKE"
+                <>
+                  CONFIRM INTAKE
+                  <span className="ml-1.5 text-gc-gold">·</span>
+                  <span className="ml-1.5 text-gc-gold">
+                    {refineryType === "OTHER" && refineryName.trim()
+                      ? `OTHER:${refineryName.trim().slice(0, 14)}`
+                      : refineryType}
+                  </span>
+                </>
               )}
             </button>
             {actionError[batch.id] && (
@@ -261,7 +278,12 @@ export default function RefineryDashboard() {
             <span className="text-gc-green-dim tracking-[1px]">refinery_type</span>
             <select
               value={refineryType}
-              onChange={(e) => setRefineryType(e.target.value as RefineryType)}
+              onChange={(e) => {
+                const v = e.target.value;
+                if ((REFINERY_TYPES as readonly string[]).includes(v)) {
+                  setRefineryType(v as RefineryType);
+                }
+              }}
               className="bg-transparent border border-gc-border rounded-gc px-2 py-1 text-gc-green font-mono outline-none focus:border-gc-green-dim"
             >
               {REFINERY_TYPES.map((t) => (

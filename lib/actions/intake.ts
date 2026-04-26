@@ -90,20 +90,26 @@ export async function intakeAction(input: IntakeInput): Promise<IntakeResult> {
     let weightWarning: string | undefined;
     const declaredWeight = Number(batch.declared_weight_kg);
     const discrepancy = Math.abs(data.intake_weight_kg - declaredWeight) / declaredWeight;
-    if (discrepancy > 0.001) {
-      weightWarning = `Weight discrepancy of ${(discrepancy * 100).toFixed(2)}% detected. Batch will be auto-flagged.`;
+    if (discrepancy >= 0.001) {
+      weightWarning = `Weight discrepancy of ${(discrepancy * 100).toFixed(2)}% (≥ 0.1%) detected. Batch will be auto-flagged.`;
     }
 
     // 7. Submit to Fabric and insert batch_node (Node 03)
     // The DB trigger (check_weight_reconciliation) will handle:
-    //   - Weight discrepancy check (>0.1% → auto-flag)
+    //   - Weight discrepancy check (≥ 0.1% → auto-flag)
     //   - Batch status update
+    //
+    // Defense-in-depth: even though the schema rejects refinery_name when
+    // refinery_type is not OTHER, force it to null here so a future schema
+    // change or stale client cannot leak a name into a non-OTHER record.
+    const refineryName =
+      data.refinery_type === "OTHER" ? data.refinery_name ?? null : null;
     const nodeData = {
       action: "INTAKE_CONFIRMED",
       intake_weight_kg: data.intake_weight_kg,
       declared_weight_kg: batch.declared_weight_kg,
       refinery_type: data.refinery_type,
-      refinery_name: data.refinery_name ?? null,
+      refinery_name: refineryName,
     };
 
     const fabricResult = await submitBatchNode({

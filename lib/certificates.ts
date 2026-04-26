@@ -10,15 +10,49 @@ export type CertifyResult =
   | { success: false; error: string };
 
 /**
+ * Canonicalize a value before hashing:
+ *   - drops null and undefined values
+ *   - sorts object keys
+ *   - recurses into arrays/objects
+ *
+ * This makes the hash stable across schema additions where a new key
+ * defaults to null. For example, legacy Node 03 data {"action":"INTAKE_CONFIRMED"}
+ * and new Node 03 data {"action":"INTAKE_CONFIRMED","refinery_name":null}
+ * canonicalize to the same shape. Without this, adding optional fields
+ * silently changes the audit-trail hash for batches that pass through
+ * after the schema change.
+ */
+function canonicalize(value: unknown): unknown {
+  if (value === null || value === undefined) return undefined;
+  if (Array.isArray(value)) {
+    return value.map(canonicalize).filter((v) => v !== undefined);
+  }
+  if (typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const k of Object.keys(obj).sort()) {
+      const v = canonicalize(obj[k]);
+      if (v !== undefined) out[k] = v;
+    }
+    return out;
+  }
+  return value;
+}
+
+/**
  * Generate SHA-256 audit trail hash from all node data.
  * This hash is written to the CSDDD certificate and (eventually) to Hyperledger Fabric.
+ *
+ * Hash input is canonicalized (sorted keys, nulls dropped) so it is stable
+ * across non-semantic shape changes. Hashes are computed once at issuance
+ * and stored on csddd_certificates; the verify page does not recompute.
  */
 function generateAuditTrailHash(batchData: {
   batch_id: string;
   declared_weight_kg: number;
   nodes: { node_number: number; tx_hash: string; timestamp: string; data: any }[];
 }): string {
-  const payload = JSON.stringify({
+  const canonical = canonicalize({
     batch_id: batchData.batch_id,
     declared_weight_kg: batchData.declared_weight_kg,
     nodes: batchData.nodes
@@ -30,7 +64,7 @@ function generateAuditTrailHash(batchData: {
         data: n.data,
       })),
   });
-  return crypto.createHash("sha256").update(payload).digest("hex");
+  return crypto.createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
 }
 
 /**

@@ -9,6 +9,10 @@ export default async function VerifyPage({
   const supabase = createClient();
 
   // Public page — uses anon key (no auth required)
+  // Narrow batch_nodes to Node 3 only — that is the only node whose data is
+  // surfaced on this public page (refinery_type / refinery_name). Anon RLS
+  // is also scoped to Node 3 of certified batches in the verify_page_rls
+  // migration, so this query matches the policy exactly.
   const { data: cert } = await supabase
     .from("csddd_certificates")
     .select(`
@@ -18,10 +22,11 @@ export default async function VerifyPage({
         declared_weight_kg,
         status,
         operators (name, region),
-        batch_nodes (node_number, data)
+        batch_nodes!inner (node_number, data)
       )
     `)
     .eq("gold_batches.batch_id", params.batchId)
+    .eq("gold_batches.batch_nodes.node_number", 3)
     .single();
 
   if (!cert) {

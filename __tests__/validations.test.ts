@@ -213,6 +213,113 @@ describe("intakeSchema", () => {
     expect(result.success).toBe(true);
   });
 
+  it("rejects OTHER with missing refinery_name", () => {
+    const result = intakeSchema.safeParse({
+      batch_id: validBatchId,
+      intake_weight_kg: 12.39,
+      refinery_type: "OTHER",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects OTHER with empty refinery_name", () => {
+    const result = intakeSchema.safeParse({
+      batch_id: validBatchId,
+      intake_weight_kg: 12.39,
+      refinery_type: "OTHER",
+      refinery_name: "",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects OTHER with whitespace-only refinery_name", () => {
+    const result = intakeSchema.safeParse({
+      batch_id: validBatchId,
+      intake_weight_kg: 12.39,
+      refinery_type: "OTHER",
+      refinery_name: "   ",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects OTHER with null refinery_name", () => {
+    const result = intakeSchema.safeParse({
+      batch_id: validBatchId,
+      intake_weight_kg: 12.39,
+      refinery_type: "OTHER",
+      refinery_name: null,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects GCR with stray refinery_name", () => {
+    const result = intakeSchema.safeParse({
+      batch_id: validBatchId,
+      intake_weight_kg: 12.39,
+      refinery_type: "GCR",
+      refinery_name: "Should not be here",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects EU with stray refinery_name", () => {
+    const result = intakeSchema.safeParse({
+      batch_id: validBatchId,
+      intake_weight_kg: 12.39,
+      refinery_type: "EU",
+      refinery_name: "Should not be here",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("trims surrounding whitespace on refinery_name", () => {
+    const result = intakeSchema.safeParse({
+      batch_id: validBatchId,
+      intake_weight_kg: 12.39,
+      refinery_type: "OTHER",
+      refinery_name: "  Rand Refinery  ",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.refinery_name).toBe("Rand Refinery");
+    }
+  });
+
+  it("strips control chars from refinery_name (zero-width, RTL override)", () => {
+    const result = intakeSchema.safeParse({
+      batch_id: validBatchId,
+      intake_weight_kg: 12.39,
+      refinery_type: "OTHER",
+      // U+200B zero-width space, U+202E RTL override
+      refinery_name: "Rand​ Refinery‮",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.refinery_name).toBe("Rand Refinery");
+    }
+  });
+
+  it("rejects refinery_name with disallowed chars (emoji, $, *)", () => {
+    for (const bad of ["Rand $$$ Refinery", "Refinery*", "Rand 🏭"]) {
+      const result = intakeSchema.safeParse({
+        batch_id: validBatchId,
+        intake_weight_kg: 12.39,
+        refinery_type: "OTHER",
+        refinery_name: bad,
+      });
+      expect(result.success, `should reject "${bad}"`).toBe(false);
+    }
+  });
+
+  it("rejects lowercase refinery_type", () => {
+    const result = intakeSchema.safeParse({
+      batch_id: validBatchId,
+      intake_weight_kg: 12.39,
+      refinery_type: "gcr",
+    });
+    expect(result.success).toBe(false);
+  });
+
   it("rejects missing refinery_type", () => {
     const result = intakeSchema.safeParse({
       batch_id: validBatchId,
