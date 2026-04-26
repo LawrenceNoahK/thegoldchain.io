@@ -3,6 +3,9 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { intakeAction } from "@/lib/actions/intake";
+import { REFINERY_TYPES } from "@/lib/validations";
+
+type RefineryType = (typeof REFINERY_TYPES)[number];
 import { TerminalPanel } from "@/components/TerminalPanel";
 import { StatusBadge } from "@/components/StatusBadge";
 import { BatchTable, type Column } from "@/components/BatchTable";
@@ -14,6 +17,8 @@ export default function RefineryDashboard() {
   const [actionError, setActionError] = useState<Record<string, string>>({});
   const [actionWarning, setActionWarning] = useState<Record<string, string>>({});
   const [intakeWeight, setIntakeWeight] = useState<Record<string, string>>({});
+  const [refineryType, setRefineryType] = useState<RefineryType>("GCR");
+  const [refineryName, setRefineryName] = useState<string>("");
   const [authChecked, setAuthChecked] = useState(false);
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
@@ -126,6 +131,8 @@ export default function RefineryDashboard() {
       const result = await intakeAction({
         batch_id: batch.id,
         intake_weight_kg: parseFloat(weight),
+        refinery_type: refineryType,
+        refinery_name: refineryType === "OTHER" ? refineryName.trim() || null : null,
       });
 
       if (result.success) {
@@ -236,11 +243,52 @@ export default function RefineryDashboard() {
     },
   ];
 
+  const refineryLabels: Record<RefineryType, string> = {
+    GCR: "GCR · Gold Coast Refinery (Ghana)",
+    EU: "EU · European refinery",
+    OTHER: "OTHER · Specify name",
+  };
+
   return (
     <div className="space-y-4">
       <div className="text-[10px] text-gc-green-dim tracking-[1px]">
         $ thegoldchain refinery --intake --pending
       </div>
+
+      <TerminalPanel title="REFINERY.SESSION" subtitle="OPERATING.AS">
+        <div className="p-4 flex flex-wrap items-center gap-4 text-[10px]">
+          <label className="flex items-center gap-2">
+            <span className="text-gc-green-dim tracking-[1px]">refinery_type</span>
+            <select
+              value={refineryType}
+              onChange={(e) => setRefineryType(e.target.value as RefineryType)}
+              className="bg-transparent border border-gc-border rounded-gc px-2 py-1 text-gc-green font-mono outline-none focus:border-gc-green-dim"
+            >
+              {REFINERY_TYPES.map((t) => (
+                <option key={t} value={t} className="bg-gc-bg">
+                  {refineryLabels[t]}
+                </option>
+              ))}
+            </select>
+          </label>
+          {refineryType === "OTHER" && (
+            <label className="flex items-center gap-2">
+              <span className="text-gc-green-dim tracking-[1px]">refinery_name</span>
+              <input
+                type="text"
+                maxLength={100}
+                value={refineryName}
+                onChange={(e) => setRefineryName(e.target.value)}
+                placeholder="e.g. Rand Refinery"
+                className="w-64 bg-transparent border border-gc-border rounded-gc px-2 py-1 text-gc-gold font-mono outline-none caret-gc-green focus:border-gc-green-dim"
+              />
+            </label>
+          )}
+          <span className="text-[9px] text-gc-green-muted tracking-[1px] ml-auto">
+            applies to all intake submissions in this session
+          </span>
+        </div>
+      </TerminalPanel>
 
       <TerminalPanel title="REFINERY.INTAKE.QUEUE" subtitle={`${batches.length} BATCHES`}>
         <div className="p-4 overflow-x-auto">

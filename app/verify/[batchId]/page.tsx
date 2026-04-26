@@ -17,7 +17,8 @@ export default async function VerifyPage({
         batch_id,
         declared_weight_kg,
         status,
-        operators (name, region)
+        operators (name, region),
+        batch_nodes (node_number, data)
       )
     `)
     .eq("gold_batches.batch_id", params.batchId)
@@ -47,6 +48,19 @@ export default async function VerifyPage({
   }
 
   const batch = cert.gold_batches as any;
+  const node3 = (batch.batch_nodes || []).find((n: any) => n.node_number === 3);
+  const refineryType: string | undefined = node3?.data?.refinery_type;
+  const refineryName: string | undefined = node3?.data?.refinery_name;
+  const refineryTypeLabel: Record<string, string> = {
+    GCR: "Gold Coast Refinery (Ghana)",
+    EU: "European refinery",
+    OTHER: refineryName || "Other",
+  };
+  const refineryDisplay = refineryType
+    ? refineryType === "OTHER" && refineryName
+      ? `OTHER · ${refineryName}`
+      : refineryTypeLabel[refineryType] || refineryType
+    : null;
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
@@ -91,6 +105,12 @@ export default async function VerifyPage({
               <span className="text-gc-green-dim">weight_kg</span>
               <span className="text-gc-gold font-mono">{batch.declared_weight_kg}</span>
             </div>
+            {refineryDisplay && (
+              <div className="flex justify-between">
+                <span className="text-gc-green-dim">refinery</span>
+                <span className="text-gc-green-mid">{refineryDisplay}</span>
+              </div>
+            )}
             <div className="flex justify-between">
               <span className="text-gc-green-dim">issued_at</span>
               <span className="text-gc-green-muted">

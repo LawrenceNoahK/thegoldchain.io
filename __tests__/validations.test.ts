@@ -183,41 +183,104 @@ describe("approveSchema", () => {
 // ── intakeSchema ─────────────────────────────────────────────
 
 describe("intakeSchema", () => {
-  it("accepts valid intake", () => {
+  const validBatchId = "123e4567-e89b-12d3-a456-426614174000";
+
+  it("accepts valid intake with GCR refinery", () => {
     const result = intakeSchema.safeParse({
-      batch_id: "123e4567-e89b-12d3-a456-426614174000",
+      batch_id: validBatchId,
       intake_weight_kg: 12.39,
+      refinery_type: "GCR",
     });
     expect(result.success).toBe(true);
   });
 
+  it("accepts valid intake with EU refinery", () => {
+    const result = intakeSchema.safeParse({
+      batch_id: validBatchId,
+      intake_weight_kg: 12.39,
+      refinery_type: "EU",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts OTHER refinery with a name", () => {
+    const result = intakeSchema.safeParse({
+      batch_id: validBatchId,
+      intake_weight_kg: 12.39,
+      refinery_type: "OTHER",
+      refinery_name: "Rand Refinery",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects missing refinery_type", () => {
+    const result = intakeSchema.safeParse({
+      batch_id: validBatchId,
+      intake_weight_kg: 12.39,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects unknown refinery_type", () => {
+    const result = intakeSchema.safeParse({
+      batch_id: validBatchId,
+      intake_weight_kg: 12.39,
+      refinery_type: "DUBAI",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects refinery_name with HTML", () => {
+    const result = intakeSchema.safeParse({
+      batch_id: validBatchId,
+      intake_weight_kg: 12.39,
+      refinery_type: "OTHER",
+      refinery_name: "<script>alert(1)</script>",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects refinery_name over 100 chars", () => {
+    const result = intakeSchema.safeParse({
+      batch_id: validBatchId,
+      intake_weight_kg: 12.39,
+      refinery_type: "OTHER",
+      refinery_name: "x".repeat(101),
+    });
+    expect(result.success).toBe(false);
+  });
+
   it("rejects missing intake_weight_kg", () => {
     const result = intakeSchema.safeParse({
-      batch_id: "123e4567-e89b-12d3-a456-426614174000",
+      batch_id: validBatchId,
+      refinery_type: "GCR",
     });
     expect(result.success).toBe(false);
   });
 
   it("rejects intake weight of 0", () => {
     const result = intakeSchema.safeParse({
-      batch_id: "123e4567-e89b-12d3-a456-426614174000",
+      batch_id: validBatchId,
       intake_weight_kg: 0,
+      refinery_type: "GCR",
     });
     expect(result.success).toBe(false);
   });
 
   it("rejects intake weight over 10,000 kg", () => {
     const result = intakeSchema.safeParse({
-      batch_id: "123e4567-e89b-12d3-a456-426614174000",
+      batch_id: validBatchId,
       intake_weight_kg: 10001,
+      refinery_type: "GCR",
     });
     expect(result.success).toBe(false);
   });
 
   it("rejects more than 4 decimal places", () => {
     const result = intakeSchema.safeParse({
-      batch_id: "123e4567-e89b-12d3-a456-426614174000",
+      batch_id: validBatchId,
       intake_weight_kg: 1.23456,
+      refinery_type: "GCR",
     });
     expect(result.success).toBe(false);
   });

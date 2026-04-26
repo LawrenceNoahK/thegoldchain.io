@@ -102,6 +102,8 @@ export async function intakeAction(input: IntakeInput): Promise<IntakeResult> {
       action: "INTAKE_CONFIRMED",
       intake_weight_kg: data.intake_weight_kg,
       declared_weight_kg: batch.declared_weight_kg,
+      refinery_type: data.refinery_type,
+      refinery_name: data.refinery_name ?? null,
     };
 
     const fabricResult = await submitBatchNode({

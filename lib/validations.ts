@@ -84,8 +84,18 @@ export const approveSchema = z.object({
 
 /**
  * Node 03 — Refinery Intake Verification
- * Refinery confirms received weight for reconciliation
+ * Refinery confirms received weight for reconciliation.
+ *
+ * refinery_type captures which refinery received the gold:
+ *   GCR    — Gold Coast Refinery (Ghana, operational since 2026-02-04;
+ *            mandated first stop as Ghana phases out raw exports)
+ *   EU     — European refinery (downstream/secondary stop)
+ *   OTHER  — Any other refinery (Rand, Dubai contingency, etc.)
+ * Identity is stored as data on the Node 03 record so the 4-node topology
+ * stays fixed.
  */
+export const REFINERY_TYPES = ["GCR", "EU", "OTHER"] as const;
+
 export const intakeSchema = z.object({
   batch_id: z.string().uuid("Invalid batch ID format"),
   intake_weight_kg: z
@@ -99,6 +109,17 @@ export const intakeSchema = z.object({
       },
       { message: "Intake weight cannot have more than 4 decimal places" }
     ),
+  refinery_type: z.enum(REFINERY_TYPES, {
+    required_error: "Refinery type is required",
+    invalid_type_error: "Refinery type must be GCR, EU, or OTHER",
+  }),
+  refinery_name: z
+    .string()
+    .max(100, "Refinery name cannot exceed 100 characters")
+    .refine((val) => !noHtmlRegex.test(val), { message: "HTML content is not allowed" })
+    .transform((val) => val?.trim() || undefined)
+    .optional()
+    .nullable(),
 });
 
 /**
