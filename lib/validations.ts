@@ -113,8 +113,25 @@ export const loginSchema = z.object({
     .min(6, "Password must be at least 6 characters"),
 });
 
+/**
+ * FLAG Review — GoldBod officer resolves a flagged batch
+ * Actions: OVERRIDE (approve despite flag), REJECT, ESCALATE
+ */
+export const flagReviewSchema = z.object({
+  batch_id: z.string().uuid("Invalid batch ID format"),
+  action: z.enum(["OVERRIDE", "REJECT", "ESCALATE"], {
+    required_error: "Review action is required",
+  }),
+  officer_notes: z
+    .string({ required_error: "Notes are required for flag reviews" })
+    .min(10, "Please provide at least 10 characters explaining the decision")
+    .max(1000, "Notes cannot exceed 1000 characters")
+    .refine((val) => !noHtmlRegex.test(val), { message: "HTML content is not allowed" }),
+});
+
 // Export inferred types for use in server actions
 export type DeclareInput = z.infer<typeof declareSchema>;
 export type ApproveInput = z.infer<typeof approveSchema>;
 export type IntakeInput = z.infer<typeof intakeSchema>;
+export type FlagReviewInput = z.infer<typeof flagReviewSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
